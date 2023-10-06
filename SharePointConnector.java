@@ -1,37 +1,38 @@
-import org.mule.api.MuleEventContext;
-import org.mule.api.lifecycle.Callable;
+package com.example.mulesoft.connectors;
 
-import com.microsoft.sharepoint.SPRestService;
-import com.microsoft.sharepoint.SPServiceFactory;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.Base64;
 
-public class SharePointConnector implements Callable {
+public class SharePointConnector {
 
-    private String siteUrl;
+    private String sharePointUrl;
     private String username;
     private String password;
 
-    public void setSiteUrl(String siteUrl) {
-        this.siteUrl = siteUrl;
-    }
-
-    public void setUsername(String username) {
+    public SharePointConnector(String sharePointUrl, String username, String password) {
+        this.sharePointUrl = sharePointUrl;
         this.username = username;
-    }
-
-    public void setPassword(String password) {
         this.password = password;
     }
 
-    @Override
-    public Object onCall(MuleEventContext eventContext) throws Exception {
-        // Create SharePoint REST service instance
-        SPServiceFactory factory = new SPServiceFactory();
-        SPRestService spService = factory.createRestService(siteUrl, username, password);
+    public byte[] getFile(String fileRelativeUrl) throws Exception {
+        String fullUrl = sharePointUrl + "/_api/web/GetFileByServerRelativeUrl('" + fileRelativeUrl + "')/$value";
 
-        // Perform operations on SharePoint
-        // For example, retrieve a list of documents
-        String documents = spService.getDocuments();
+        URL url = new URL(fullUrl);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("GET");
+        conn.setRequestProperty("Accept", "application/octet-stream");
 
-        return documents;
+        String userCredentials = username + ":" + password;
+        String basicAuth = "Basic " + new String(Base64.getEncoder().encode(userCredentials.getBytes()));
+        conn.setRequestProperty("Authorization", basicAuth);
+
+        int responseCode = conn.getResponseCode();
+        if (responseCode == 200) {
+            return conn.getInputStream().readAllBytes();
+        } else {
+            throw new Exception("Failed to retrieve file from SharePoint. HTTP error code: " + responseCode);
+        }
     }
 }
