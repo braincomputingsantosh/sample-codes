@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:java="http://www.mulesoft.org/schema/mule/java"
+      xmlns:http="http://www.mulesoft.org/schema/mule/http"
+      xmlns="http://www.mulesoft.org/schema/mule/core"
+      xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+                          http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+                          http://www.mulesoft.org/schema/mule/java http://www.mulesoft.org/schema/mule/java/current/mule-java.xsd">
+
+    <http:request-config name="SharePoint_Config" basePath="http://yoursharepointdomain.com/_api/web">
+        <http:request-connection host="yoursharepointdomain.com" port="80" />
+    </http:request-config>
+
+    <flow name="sharepoint-fetch-file-flow" >
+        <http:listener config-ref="HTTP_Listener_Config" path="/fetchFile"/>
+        
+        <!-- SharePoint Call -->
+        <http:request method="GET" config-ref="SharePoint_Config" path="/GetFileByServerRelativeUrl('/sites/yoursite/document-library/filename.ext')/$value">
+            <http:headers><![CDATA[
+                #[
+                    output application/java
+                    ---
+                    {
+                        "Authorization" : "Basic " ++ (vars.username ++ ":" ++ vars.password).bytes as String {encoding: "Base64"}
+                    }
+                ]
+            ]]></http:headers>
+        </http:request>
+
+        <!-- Process the response -->
+        <java:invoke class="com.example.SharePointFileProcessor" method="processFile" instance="singleton"/>
+    </flow>
+</mule>
