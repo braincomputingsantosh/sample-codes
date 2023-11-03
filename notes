@@ -1,0 +1,22 @@
+-- Function: update_est_calendared
+-- 
+-- Description: 
+--     This function updates the 'est_calendared' field in the 'exams' table of the 'rpt' schema
+--     based on the provided 'event type' (_namex), 'resource level' (_resource_level), and the
+--     desired value for 'est_calendared' (_est_calendared_value). It applies the update for
+--     records where the 'event type' is 'Examination' or 'Follow-Up' and the 'resource level'
+--     is '2', '3', or '4'. The update is only applied to records where the 'event_start_date' 
+--     is later than June 5, 2017, and the 'calendared' field is not null.
+--
+-- Parameters:
+--     _namex                - The type of the event ('Examination' or 'Follow-Up').
+--     _resource_level       - The level of resources ('2', '3', or '4') as a CHAR type.
+--     _est_calendared_value - The value to set for the 'est_calendared' field ('Yes' or 'No').
+--
+-- Returns:
+--     VOID - The function does not return a value but updates the corresponding rows.
+--
+-- Usage:
+--     To use this function, execute it with the desired parameters:
+--         SELECT update_est_calendared('Examination', '2', 'Yes');
+--     This will update eligible 'Examination' records with a resource level of '2' to 'Yes'.
