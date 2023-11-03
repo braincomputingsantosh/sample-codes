@@ -1,98 +1,137 @@
-# Databricks notebook source
-# MAGIC %md # Load raw machine data
-# MAGIC In this example we have a single shift data for 2 lines - L01 and L02. L01 is straight forward starting and ending exactly with the shift without observing any downtime.
-# MAGIC 
-# MAGIC The line L02 emitted data between 11:15 and 15:45 (4.5 hours). It observed failure starting at 15:15 and stabilized back at 15:45 i.e. half an hour of downtime. This means that L02 operated for 4 hours in the shift. Since the shift length was 8 hours, the L02 availability is hence calculated as 0.5.
 
-# COMMAND ----------
+UDF Speed Testing
+When using Spark, you have a few different options for manipulating data. However, some of these options are more performant than others. In this notebook, we'll try out a few options and measure their peformance.
 
-from pyspark.sql import functions as F, Window as W
+Here are the methods we will be evaluating:
 
-dfRawData = sqlContext.createDataFrame([
-  ("L01", "2022-02-10 08:00:00.000", None),
-  ("L02", "2022-02-10 11:15:00.000", None),
-  ("L02", "2022-02-10 15:10:00.000", None),
-  ("L02", "2022-02-10 15:15:00.000", "f01"),
-  ("L02", "2022-02-10 15:20:00.000", "f02"),
-  ("L02", "2022-02-10 15:45:00.000", None),
-  ("L01", "2022-02-10 16:00:00.000", None)
-], ["lineName", "time", "faultCode"]) \
-.withColumn("time", F.to_timestamp("time"))
+Spark Commands: PySpark is a wrapper around the Spark API. By using PySpark, we can use Python code to send commands directly to Spark.
+Spark SQL: Similar to PySpark, Spark SQL allows us to use SQL-like syntax to send commands directly to Spark.
+Scala UDF: We can extend Spark by writing functions in Scala and registering them with Spark. This allows Spark to run our custom function against the data it is storing. Since the Scala code can be executed within the same JVM in which Spark runs, the data does not need to be serialized to a different process.
+Python UDF: We can also extend Spark by writing functions in Python and leverage packages from Python's vast eco-system. However, unlike a Scala UDF, this Python code is executed in a separate process (a Python runtime environment). Therefore, all of the data needed by the function must be serialized and sent from the JVM to the Python process. This incurs a performance penalty.
+With this understanding of how Spark works, we would expect the native Spark commands to be the most performant. We would expect the Spark SQL commands to have almost identical performance since they are functionaly the same as the native commands. A Scala UDF should perform well but might be slightly slower than a native command. Lastly, we would expect a Python UDF to perform the slowest since it requires the data to be serialized between processes.
 
-display(dfRawData)
+For this test, we will do some arbitrary string manipulation. We will take a publicationuuid, which is a string of 64 characters. We will take the last 16 characters of the string, append a dash, and then append the remaining 48 characters. Therefore:
+63dc895fe59caecedeae490969eee8a061fa1e02e5ea354fe6d1e353b7b8ece4
+becomes:
+e6d1e353b7b8ece4-63dc895fe59caecedeae490969eee8a061fa1e02e5ea354f
 
-# COMMAND ----------
+We will implement this same transformation using the four techniques listed above. We will apply each implementation to our data frame and see how they perform.
 
-# MAGIC %md Add previous row timestamp and fault code
+Create Our UDF Functions
+Now we can implement our UDF functions in Python and in Scala
 
-# COMMAND ----------
 
-perLineByTimeWindow = W.partitionBy("lineName").orderBy("time")
+from pyspark.sql import functions as F
+from pyspark.sql import types as T
 
-dfRawData \
-    .withColumn("prevTime", F.lag("time").over(perLineByTimeWindow)) \
-    .withColumn("prevFaultCode", F.lag("faultCode").over(perLineByTimeWindow)) \
-    .createOrReplaceTempView("MachineData")
+def chop_uuid(text:str) -> str:
+  return text[-16:] + '-' + text[:48]
 
-# COMMAND ----------
+spark.udf.register("python_chop_uuid", F.udf(lambda x: chop_uuid(x), T.StringType()))
+     
+Out[1]: <function __main__.<lambda>(x)>
 
-# MAGIC %sql
-# MAGIC SELECT * FROM MachineData
+%scala
+import org.apache.spark.sql.functions.udf
 
-# COMMAND ----------
+val chop_uuid = udf((x: String) => x.takeRight(16) + "-" + x.substring(0, 48))
+spark.udf.register("scala_chop_uuid", chop_uuid)
+     
+import org.apache.spark.sql.functions.udf chop_uuid: org.apache.spark.sql.expressions.UserDefinedFunction = SparkUserDefinedFunction(
+14887/1823763002@732e70ae,StringType,List(Some(class[value[0]: string])),Some(class[value[0]: string]),None,true,true) res0: org.apache.spark.sql.expressions.UserDefinedFunction = SparkUserDefinedFunction(
+14887/1823763002@732e70ae,StringType,List(Some(class[value[0]: string])),Some(class[value[0]: string]),Some(scala_chop_uuid),true,true)
+Get Some Data
+We just need a dataframe with a bunch of double UUID's in it that we can run our functions against. Half a billion rows should be plenty.
 
-# MAGIC %md Load shifts metadata
 
-# COMMAND ----------
+print("Loading data...")
+df = spark.read.format("delta").load("/mnt/silver/patent/family").select("publicationuuid").cache()
+df.foreach(lambda x: True)
+print(f"Number of Rows: {df.count():,}")
+     
+Loading data... Number of Rows: 596,879,324
+Run the Tests in an Automated Fashion
+The code below is a loop. Each time, we will perform one of a randomly-selected implementation of the transformation. We will track how long each run takes and then compare the results across the different implementations of the transformation.
 
-sqlContext.createDataFrame([
-  ("day", 8, 16),
-  ("evening", 16, 24),
-  ("night", 0, 8)
-], ["shiftName", "startHour", "endHour"]) \
-.withColumn("totalHours", F.col("endHour") - F.col("startHour")) \
-.createOrReplaceTempView("Shifts")
 
-# COMMAND ----------
+import random
+from datetime import datetime
+from pyspark.sql import functions as F
 
-# MAGIC %sql
-# MAGIC SELECT * FROM Shifts
+results = {}
 
-# COMMAND ----------
+run_types = ['spark', 'sql', 'scala', 'python'] * 20
+random.shuffle(run_types)
 
-# MAGIC %md Calculate downtime per row if there was fault in previous row
+for run_type in run_types:
+  print("\n--------------------------------------------------\n")
+  print(f"Trying '{run_type}'")
+  
+  print("   Applying transformation...")
+  if run_type == 'spark':
+    df = df.withColumn("spark_command", F.concat(F.substring("publicationuuid", -16, 16), F.lit("-"), F.substring("publicationuuid", 0, 48)))
 
-# COMMAND ----------
+  elif run_type == 'sql':
+    df = df.withColumn("sql_command", F.expr("CONCAT(SUBSTRING(publicationuuid, -16, 16), '-', SUBSTRING(publicationuuid, 0, 48))"))
+      
+  elif run_type =='scala':
+    df = df.withColumn("scala_udf", F.expr("scala_chop_uuid(publicationuuid)"))
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC   d.lineName,
-# MAGIC   d.time,
-# MAGIC   d.prevTime,
-# MAGIC   d.faultCode,
-# MAGIC   d.prevFaultCode,
-# MAGIC   CASE WHEN prevFaultCode IS NOT NULL THEN to_unix_timestamp(time) - to_unix_timestamp(prevTime) ELSE 0 END AS downTime  
-# MAGIC FROM MachineData d
-# MAGIC INNER JOIN Shifts s ON hour(d.time) >= s.startHour AND hour(d.time) < s.endHour
+  elif run_type =='python':
+    df = df.withColumn("python_udf", F.expr("python_chop_uuid(publicationuuid)"))
+      
+  print("   Triggering action...")
+  start = datetime.now()
+  df.foreach(lambda x: True)
+  end = datetime.now()
 
-# COMMAND ----------
+  columns = df.columns
+  print(f"   Columns: {columns}")
+  df = df.drop(columns[-1])
 
-# MAGIC %md Final Result
+  run_time = (end - start).total_seconds() / 60
+  results[run_type] = results.get(run_type, []) + [run_time]
+  print(f"   Completed in {run_time} minutes")
+     
+Loading data... Number of Rows: 596,879,324 -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.5722526333333333 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.66192225 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6883847000000001 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.9080985166666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6843588833333333 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6569827833333334 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6609970000000001 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.70247645 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.88462395 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6639201 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.9518759166666667 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8990546333333334 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6615791166666667 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.9054351166666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6839297833333333 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6884910666666666 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6600648166666667 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6625185666666666 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6877886666666666 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.7021473 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.66032295 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6847340000000001 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.68502905 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6608457166666667 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6599224166666667 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8943572166666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6901039999999999 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6619532666666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.7694913666666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.68570345 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8861696 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8893653333333333 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8844189333333333 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.69114995 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6523360666666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.7854270666666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6847059166666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6773334166666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6823809833333333 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8989084833333333 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.7176299833333334 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6539309666666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6848512666666667 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6529501 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6820191333333334 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8936225833333334 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6794774 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6780650500000001 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6780807666666667 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8965125166666666 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8845585 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6794598500000001 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8950145333333333 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.66432635 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6887118333333333 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6911382833333334 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.68218 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8925327500000001 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.7096297 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6574899833333333 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8974934666666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.68909975 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.68592095 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6956132166666666 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6936092833333334 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6917988 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.68727475 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6540273166666667 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6807229166666667 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6859080666666666 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8940838000000001 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.9484269 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.8810638833333333 minutes -------------------------------------------------- Trying 'spark' Applying transformation... Triggering action... Columns: ['publicationuuid', 'spark_command'] Completed in 0.6777511833333333 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.68640415 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6846533 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.68872115 minutes -------------------------------------------------- Trying 'scala' Applying transformation... Triggering action... Columns: ['publicationuuid', 'scala_udf'] Completed in 0.6610048166666667 minutes -------------------------------------------------- Trying 'python' Applying transformation... Triggering action... Columns: ['publicationuuid', 'python_udf'] Completed in 0.9051501833333333 minutes -------------------------------------------------- Trying 'sql' Applying transformation... Triggering action... Columns: ['publicationuuid', 'sql_command'] Completed in 0.6878159166666666 minutes
+Results
+Use some loops to display the results as a table.
 
-# COMMAND ----------
+NOTE: These results are expressed in minutes, not seconds.
 
-# MAGIC %sql
-# MAGIC SELECT
-# MAGIC   lineName,
-# MAGIC   (max(unixTime) - min(unixTime) - sum(downTime)) / 3600 / first(totalHours) AS availability
-# MAGIC FROM
-# MAGIC (
-# MAGIC   SELECT 
-# MAGIC     d.lineName,
-# MAGIC     to_unix_timestamp(d.time) AS unixTime,
-# MAGIC     s.totalHours,
-# MAGIC     CASE WHEN prevFaultCode IS NOT NULL THEN to_unix_timestamp(time) - to_unix_timestamp(prevTime) ELSE 0 END AS downTime  
-# MAGIC   FROM MachineData d
-# MAGIC   INNER JOIN Shifts s ON hour(d.time) >= s.startHour AND hour(d.time) < s.endHour
-# MAGIC )
-# MAGIC GROUP BY lineName
+
+from statistics import mean
+
+keys = results.keys()
+
+line = "   "
+for k in keys:
+  line = line + f"{k:>20}"
+
+print(line)
+
+
+for i in range(0, len(results[run_type])):
+  line = f"{i:>3d}"
+  for k in keys:
+     line = line + f"{results[k][i]:>20.2f}"
+  
+  print(line)
+  
+line = "---"
+for k in keys:
+  line = line + f"{'--------':>20}"
+
+print(line)
+
+  
+line = "Avg"
+for k in keys:
+  line = line + f"{mean(results[k]):>20.2f}"
+
+print(line)
+     
+spark scala python sql 0 0.57 0.66 0.91 0.70 1 0.69 0.66 0.88 0.69 2 0.68 0.66 0.95 0.69 3 0.68 0.66 0.90 0.68 4 0.69 0.66 0.91 0.68 5 0.69 0.66 0.89 0.68 6 0.68 0.66 0.89 0.68 7 0.69 0.70 0.89 0.68 8 0.77 0.66 0.88 0.68 9 0.69 0.66 0.90 0.68 10 0.79 0.66 0.89 0.71 11 0.68 0.66 0.90 0.69 12 0.68 0.65 0.88 0.70 13 0.69 0.72 0.90 0.69 14 0.69 0.65 0.89 0.69 15 0.68 0.65 0.90 0.69 16 0.69 0.66 0.89 0.69 17 0.69 0.66 0.95 0.68 18 0.68 0.65 0.88 0.69 19 0.68 0.66 0.91 0.69 --- -------- -------- -------- -------- Avg 0.69 0.66 0.90 0.69
+Scala UDF: 0.66 minutes
+Python UDF: 0.90 minutes
+Python UDF is 36% slower than Scala UDF
