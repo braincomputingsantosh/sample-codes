@@ -1,47 +1,70 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import udf
-from pyspark.sql.types import StructType, StructField, StringType
-import xml.etree.ElementTree as ET
+Step 1: Create a Virtual Environment
+Open a Terminal or Command Prompt.
 
-# Initialize Spark Session
-spark = SparkSession.builder.appName("ManualXMLParsing").getOrCreate()
+Navigate to Your Project Directory:
 
-# Path to your XML file
-xml_file_path = "/path/to/STRUCTURE_CUT_ATTRIBUTES.xml"
+sh
+Copy code
+cd path/to/your/project
+Create a Virtual Environment:
 
-# Read the XML file as text
-xml_df = spark.read.text(xml_file_path)
+On Windows:
+sh
+Copy code
+python -m venv venv
+On macOS/Linux:
+sh
+Copy code
+python3 -m venv venv
+Activate the Virtual Environment:
 
-# Define the schema for the parsed XML
-schema = StructType([
-    StructField("nm_lgl", StringType(), True),
-    StructField("nm_lgl_short", StringType(), True)
-])
+On Windows:
+sh
+Copy code
+.\venv\Scripts\activate
+On macOS/Linux:
+sh
+Copy code
+source venv/bin/activate
+Step 2: Install Databricks Connect
+Install Databricks Connect:
+sh
+Copy code
+pip install -U databricks-connect
+Step 3: Configure Databricks Connect
+Run the Configuration Command:
 
-# UDF to parse the XML string
-def parse_xml(xml_string):
-    try:
-        root = ET.fromstring(xml_string)
-        nm_lgl = root.find('nm_lgl').text if root.find('nm_lgl') is not None else None
-        nm_lgl_short = root.find('nm_lgl_short').text if root.find('nm_lgl_short') is not None else None
-        return (nm_lgl, nm_lgl_short)
-    except ET.ParseError:
-        return (None, None)
+sh
+Copy code
+databricks-connect configure
+Provide Configuration Details: You'll be prompted to enter the configuration details for your Databricks workspace (Databricks Host, Databricks Token, Cluster ID, etc.).
 
-parse_xml_udf = udf(parse_xml, schema)
+Test the Configuration:
 
-# Apply the UDF to transform the DataFrame
-transformed_df = xml_df.select(parse_xml_udf("value").alias("parsed")).select("parsed.*")
+sh
+Copy code
+databricks-connect test
+Step 4: Install the Databricks VS Code Extension (Optional)
+Open VS Code.
 
-# Show the DataFrame to verify the data
-transformed_df.show()
+Go to Extensions (View -> Extensions).
 
-# Write the DataFrame to a Delta table in Databricks
-delta_table_path = "/mnt/delta/xml_data_table"
-transformed_df.write.format("delta").mode("overwrite").save(delta_table_path)
+Search for "Databricks" and install the extension provided by Databricks (if available).
 
-# Optionally, you can create a Delta table reference in the Databricks metastore
-# spark.sql(f"CREATE TABLE my_xml_data_table USING DELTA LOCATION '{delta_table_path}'")
+Reload VS Code.
 
-# Stop the Spark session
-spark.stop()
+Step 5: Develop and Run Code
+Write and Execute Code: In VS Code, within your virtual environment, write your code in Python scripts or notebooks.
+
+Run Code on Databricks: Execute the script, and it will run on the Databricks cluster.
+
+Step 6: Deactivate Virtual Environment
+Once done, you can deactivate the virtual environment by running:
+sh
+Copy code
+deactivate
+Additional Tips
+Requirements File: To keep track of dependencies, consider creating a requirements.txt file in your project directory. Use pip freeze > requirements.txt to generate it and pip install -r requirements.txt in a new environment to install from it.
+Git Integration: Use Git for version control of your project.
+Debugging: Debugging might need to be done locally or through logging, as remote debugging on a Databricks cluster is not straightforward.
+Using a virtual environment like this ensures that all dependencies for your project are contained and managed within this isolated environment, reducing the risk of conflicts and maintaining a clean global Python installation.
