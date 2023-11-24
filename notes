@@ -1,70 +1,40 @@
-Step 1: Create a Virtual Environment
-Open a Terminal or Command Prompt.
+To get a Databricks personal access token (PAT), you need to generate it from the Databricks workspace. A PAT is used for authentication when you are interfacing with Databricks through APIs, Databricks Connect, or other third-party tools. Here’s how you can generate a personal access token in Databricks:
 
-Navigate to Your Project Directory:
+For Databricks on AWS or GCP:
+Log into your Databricks workspace.
 
-sh
-Copy code
-cd path/to/your/project
-Create a Virtual Environment:
+Click on the User Icon in the top right corner of the workspace.
 
-On Windows:
-sh
-Copy code
-python -m venv venv
-On macOS/Linux:
-sh
-Copy code
-python3 -m venv venv
-Activate the Virtual Environment:
+Select "User Settings" from the dropdown menu.
 
-On Windows:
-sh
-Copy code
-.\venv\Scripts\activate
-On macOS/Linux:
-sh
-Copy code
-source venv/bin/activate
-Step 2: Install Databricks Connect
-Install Databricks Connect:
-sh
-Copy code
-pip install -U databricks-connect
-Step 3: Configure Databricks Connect
-Run the Configuration Command:
+Navigate to the "Access Tokens" tab.
 
-sh
-Copy code
-databricks-connect configure
-Provide Configuration Details: You'll be prompted to enter the configuration details for your Databricks workspace (Databricks Host, Databricks Token, Cluster ID, etc.).
+Click on the "Generate New Token" button.
 
-Test the Configuration:
+Provide a description for the token (for your reference to identify the purpose of the token later).
 
-sh
-Copy code
-databricks-connect test
-Step 4: Install the Databricks VS Code Extension (Optional)
-Open VS Code.
+Set a lifespan for the token. This is the duration for which the token will be valid. Choose this based on your requirement, but be aware that a longer lifespan can pose a security risk if the token is compromised.
 
-Go to Extensions (View -> Extensions).
+Click on the "Generate" button.
 
-Search for "Databricks" and install the extension provided by Databricks (if available).
+Copy the generated token and save it securely. This is important as you will not be able to view the token again once you close this window.
 
-Reload VS Code.
+For Databricks on Azure (Azure Databricks):
+Log into your Azure Databricks workspace.
 
-Step 5: Develop and Run Code
-Write and Execute Code: In VS Code, within your virtual environment, write your code in Python scripts or notebooks.
+Click on the "Settings" icon (looks like a gear) in the lower-left corner of the workspace.
 
-Run Code on Databricks: Execute the script, and it will run on the Databricks cluster.
+Go to "User Settings".
 
-Step 6: Deactivate Virtual Environment
-Once done, you can deactivate the virtual environment by running:
-sh
-Copy code
-deactivate
-Additional Tips
-Requirements File: To keep track of dependencies, consider creating a requirements.txt file in your project directory. Use pip freeze > requirements.txt to generate it and pip install -r requirements.txt in a new environment to install from it.
-Git Integration: Use Git for version control of your project.
-Debugging: Debugging might need to be done locally or through logging, as remote debugging on a Databricks cluster is not straightforward.
-Using a virtual environment like this ensures that all dependencies for your project are contained and managed within this isolated environment, reducing the risk of conflicts and maintaining a clean global Python installation.
+In the “Access Tokens” section, click on “Generate New Token”.
+
+Add a comment for your reference and choose the token’s lifespan.
+
+Click “Generate” and then copy and securely store the token.
+
+Security Tips:
+Keep the Token Secure: Treat your access token like a password. Store it securely and never share it in plaintext or check it into version control systems.
+Limited Lifespan: It's generally a good practice to set a reasonable expiry for the token. If you believe a token has been compromised or is no longer needed, revoke it immediately.
+Use Environment Variables: When using the token in applications or scripts, it's best to set it as an environment variable instead of hard-coding it into your programs.
+Using the Token:
+Once you have the token, you can use it for authentications, such as setting up Databricks Connect, API calls, or any other integrations that require Databricks access. Remember, the token provides access based on your user permissions, so handle it with the same level of security as your Databricks account credentials.
