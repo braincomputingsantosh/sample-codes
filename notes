@@ -1,40 +1,25 @@
-To get a Databricks personal access token (PAT), you need to generate it from the Databricks workspace. A PAT is used for authentication when you are interfacing with Databricks through APIs, Databricks Connect, or other third-party tools. Here’s how you can generate a personal access token in Databricks:
+Developed a Search Function in Postgres:
 
-For Databricks on AWS or GCP:
-Log into your Databricks workspace.
+Successfully implemented a custom search function in Postgres, enhancing the database's functionality.
+The search function enables efficient data retrieval from the database, improving query performance and user experience.
+Reviewed Python Scripts for Census Data Import:
 
-Click on the User Icon in the top right corner of the workspace.
+Conducted a thorough review of Python scripts responsible for importing Census data.
+Identified and addressed code improvements and potential optimizations, ensuring data import processes run smoothly.
+Collaborated on GoCD Pipeline Enhancement with ABC:
 
-Select "User Settings" from the dropdown menu.
+Collaborated closely with the ABC team to identify and resolve issues in the est_calendared changes.
+Successfully deployed the enhancements to the GoCD pipeline, contributing to a more reliable and efficient CI/CD process.
+Validated est_calendared Data with Exploratory Data Analysis (EDA):
 
-Navigate to the "Access Tokens" tab.
+Performed comprehensive Exploratory Data Analysis (EDA) on est_calendared data.
+Generated informative charts and bar graphs to visualize data patterns and anomalies.
+Shared the EDA findings with the RAMPS team, facilitating data quality assurance and decision-making.
+Developed RBAC Documentation for DataBricks Process:
 
-Click on the "Generate New Token" button.
+Created Role-Based Access Control (RBAC) documentation for the DataBricks process.
+The documentation outlines access permissions, security measures, and user roles, ensuring a secure and organized DataBricks environment.
+Collaborated with Data Architect Team on PySpark Scripts:
 
-Provide a description for the token (for your reference to identify the purpose of the token later).
-
-Set a lifespan for the token. This is the duration for which the token will be valid. Choose this based on your requirement, but be aware that a longer lifespan can pose a security risk if the token is compromised.
-
-Click on the "Generate" button.
-
-Copy the generated token and save it securely. This is important as you will not be able to view the token again once you close this window.
-
-For Databricks on Azure (Azure Databricks):
-Log into your Azure Databricks workspace.
-
-Click on the "Settings" icon (looks like a gear) in the lower-left corner of the workspace.
-
-Go to "User Settings".
-
-In the “Access Tokens” section, click on “Generate New Token”.
-
-Add a comment for your reference and choose the token’s lifespan.
-
-Click “Generate” and then copy and securely store the token.
-
-Security Tips:
-Keep the Token Secure: Treat your access token like a password. Store it securely and never share it in plaintext or check it into version control systems.
-Limited Lifespan: It's generally a good practice to set a reasonable expiry for the token. If you believe a token has been compromised or is no longer needed, revoke it immediately.
-Use Environment Variables: When using the token in applications or scripts, it's best to set it as an environment variable instead of hard-coding it into your programs.
-Using the Token:
-Once you have the token, you can use it for authentications, such as setting up Databricks Connect, API calls, or any other integrations that require Databricks access. Remember, the token provides access based on your user permissions, so handle it with the same level of security as your Databricks account credentials.
+Collaborated effectively with the Data Architect team to develop PySpark scripts.
+These scripts are instrumental in data processing and analysis, contributing to the overall data architecture and analytics capabilities.
