@@ -1,37 +1,35 @@
-import csv
+import geopandas as gpd
 import sqlite3
 
-# Define your database file name
+# Read shapefile using Geopandas
+shapefile = 'path_to_your_shapefile.shp'
+gdf = gpd.read_file(shapefile)
+
+# Convert geometry column to WKT format
+gdf['geometry'] = gdf['geometry'].apply(lambda x: x.wkt)
+
+# SQLite setup
 db_name = 'mydatabase.db'
-
-# Define your table name and columns here. Adjust as per your data.
-table_name = 'my_table'
-columns = 'col1 TEXT, col2 TEXT, col3 INTEGER'  # Example column definitions
-
-# Connect to SQLite database
+table_name = 'my_shapefile_data'
 conn = sqlite3.connect(db_name)
 cursor = conn.cursor()
 
-# Create table
-cursor.execute(f'CREATE TABLE IF NOT EXISTS {table_name} ({columns})')
+# Create table - modify column types based on your shapefile data
+create_table_sql = f'''
+    CREATE TABLE IF NOT EXISTS {table_name} (
+        id INTEGER PRIMARY KEY,
+        geometry TEXT
+        -- Add other columns here
+    )'''
+cursor.execute(create_table_sql)
 conn.commit()
 
-# Function to insert data into table
-def insert_data(row):
-    placeholders = ', '.join(['?'] * len(row))
-    sql = f'INSERT INTO {table_name} VALUES ({placeholders})'
-    cursor.execute(sql, row)
+# Insert data into the table
+for _, row in gdf.iterrows():
+    insert_sql = f'''INSERT INTO {table_name} (geometry /*, other_columns*/) 
+                     VALUES (?, /* other_values */)'''
+    cursor.execute(insert_sql, (row['geometry'], /* other_values */))
+conn.commit()
 
-# Read the pipe-separated file and insert data
-try:
-    with open('yourfile.psv', 'r') as file:
-        reader = csv.reader(file, delimiter='|')
-        for row in reader:
-            insert_data(row)
-    conn.commit()
-except Exception as e:
-    print(f'Error: {e}')
-finally:
-    conn.close()
-
-print('Data loaded successfully')
+# Close the connection
+conn.close()
