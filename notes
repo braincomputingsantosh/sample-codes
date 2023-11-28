@@ -5,8 +5,11 @@ import sqlite3
 shapefile = 'path_to_your_shapefile.shp'
 gdf = gpd.read_file(shapefile)
 
-# Convert geometry column to WKT format
-gdf['geometry'] = gdf['geometry'].apply(lambda x: x.wkt)
+# Check if 'geometry' column exists and is of geometry type
+if 'geometry' in gdf.columns and gdf['geometry'].dtype == 'geometry':
+    gdf['geometry'] = gdf['geometry'].apply(lambda x: x.wkt if x else None)
+else:
+    raise ValueError("No geometry column found or column does not contain valid geometries.")
 
 # Get column names
 columns = gdf.columns.tolist()
