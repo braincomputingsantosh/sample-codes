@@ -1,25 +1,37 @@
-Developed a Search Function in Postgres:
+import csv
+import sqlite3
 
-Successfully implemented a custom search function in Postgres, enhancing the database's functionality.
-The search function enables efficient data retrieval from the database, improving query performance and user experience.
-Reviewed Python Scripts for Census Data Import:
+# Define your database file name
+db_name = 'mydatabase.db'
 
-Conducted a thorough review of Python scripts responsible for importing Census data.
-Identified and addressed code improvements and potential optimizations, ensuring data import processes run smoothly.
-Collaborated on GoCD Pipeline Enhancement with ABC:
+# Define your table name and columns here. Adjust as per your data.
+table_name = 'my_table'
+columns = 'col1 TEXT, col2 TEXT, col3 INTEGER'  # Example column definitions
 
-Collaborated closely with the ABC team to identify and resolve issues in the est_calendared changes.
-Successfully deployed the enhancements to the GoCD pipeline, contributing to a more reliable and efficient CI/CD process.
-Validated est_calendared Data with Exploratory Data Analysis (EDA):
+# Connect to SQLite database
+conn = sqlite3.connect(db_name)
+cursor = conn.cursor()
 
-Performed comprehensive Exploratory Data Analysis (EDA) on est_calendared data.
-Generated informative charts and bar graphs to visualize data patterns and anomalies.
-Shared the EDA findings with the RAMPS team, facilitating data quality assurance and decision-making.
-Developed RBAC Documentation for DataBricks Process:
+# Create table
+cursor.execute(f'CREATE TABLE IF NOT EXISTS {table_name} ({columns})')
+conn.commit()
 
-Created Role-Based Access Control (RBAC) documentation for the DataBricks process.
-The documentation outlines access permissions, security measures, and user roles, ensuring a secure and organized DataBricks environment.
-Collaborated with Data Architect Team on PySpark Scripts:
+# Function to insert data into table
+def insert_data(row):
+    placeholders = ', '.join(['?'] * len(row))
+    sql = f'INSERT INTO {table_name} VALUES ({placeholders})'
+    cursor.execute(sql, row)
 
-Collaborated effectively with the Data Architect team to develop PySpark scripts.
-These scripts are instrumental in data processing and analysis, contributing to the overall data architecture and analytics capabilities.
+# Read the pipe-separated file and insert data
+try:
+    with open('yourfile.psv', 'r') as file:
+        reader = csv.reader(file, delimiter='|')
+        for row in reader:
+            insert_data(row)
+    conn.commit()
+except Exception as e:
+    print(f'Error: {e}')
+finally:
+    conn.close()
+
+print('Data loaded successfully')
