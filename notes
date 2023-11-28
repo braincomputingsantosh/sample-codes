@@ -1,12 +1,15 @@
 import geopandas as gpd
 import sqlite3
 
-# Read shapefile using Geopandas
+# Read shapefile using GeoPandas
 shapefile = 'path_to_your_shapefile.shp'
 gdf = gpd.read_file(shapefile)
 
 # Convert geometry column to WKT format
 gdf['geometry'] = gdf['geometry'].apply(lambda x: x.wkt)
+
+# Get column names
+columns = gdf.columns.tolist()
 
 # SQLite setup
 db_name = 'mydatabase.db'
@@ -14,22 +17,19 @@ table_name = 'my_shapefile_data'
 conn = sqlite3.connect(db_name)
 cursor = conn.cursor()
 
-# Create table - modify column types based on your shapefile data
-create_table_sql = f'''
-    CREATE TABLE IF NOT EXISTS {table_name} (
-        id INTEGER PRIMARY KEY,
-        geometry TEXT
-        -- Add other columns here
-    )'''
+# Create SQL for table creation
+columns_sql = ', '.join([f"{col} TEXT" for col in columns])
+create_table_sql = f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY, {columns_sql})"
 cursor.execute(create_table_sql)
 conn.commit()
 
 # Insert data into the table
 for _, row in gdf.iterrows():
-    insert_sql = f'''INSERT INTO {table_name} (geometry /*, other_columns*/) 
-                     VALUES (?, /* other_values */)'''
-    cursor.execute(insert_sql, (row['geometry'], /* other_values */))
-conn.commit()
+    # Prepare values and SQL query
+    values = tuple(row[col] for col in columns)
+    placeholders = ', '.join(['?'] * len(columns))
+    insert_sql = f"INSERT INTO {table_name} ({', '.join(columns)}) VALUES ({placeholders})"
+    cursor.execute(insert_sql, values)
 
-# Close the connection
+conn.commit()
 conn.close()
