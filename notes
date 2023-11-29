@@ -1,36 +1,31 @@
-import shapefile
 import sqlite3
-from shapely.geometry import shape
-
-# Function to convert geometry to WKT
-def convert_to_wkt(geom):
-    return shape(geom).wkt if geom else None
-
-# Read the shapefile
-shapefile_path = 'path_to_your_shapefile.shp'
-sf = shapefile.Reader(shapefile_path)
-
-# Field names (excluding the first 'DeletionFlag' field)
-fields = [field[0] for field in sf.fields[1:]]
 
 # SQLite setup
 db_name = 'mydatabase.db'
 table_name = 'my_shapefile_data'
+
+# Connect to SQLite database
 conn = sqlite3.connect(db_name)
 cursor = conn.cursor()
 
-# Create table
-columns_sql = ', '.join([f"{field} TEXT" for field in fields] + ['geometry TEXT'])
-create_table_sql = f"CREATE TABLE IF NOT EXISTS {table_name} (id INTEGER PRIMARY KEY, {columns_sql})"
-cursor.execute(create_table_sql)
+# Example 1: Fetch all data from the table
+print("Fetching all data from the table:")
+cursor.execute(f"SELECT * FROM {table_name}")
+for row in cursor.fetchall():
+    print(row)
 
-# Insert data into table
-insert_sql = f"INSERT INTO {table_name} ({', '.join(fields)}, geometry) VALUES ({', '.join(['?'] * (len(fields) + 1))})"
+# Example 2: Fetch specific columns (e.g., DBA, TECHNOLOGY)
+print("\nFetching specific columns (DBA, TECHNOLOGY):")
+cursor.execute(f"SELECT DBA, TECHNOLOGY FROM {table_name}")
+for row in cursor.fetchall():
+    print(row)
 
-for sr in sf.shapeRecords():
-    # Combine field data and geometry data
-    row_data = list(sr.record) + [convert_to_wkt(sr.shape.__geo_interface__)]
-    cursor.execute(insert_sql, row_data)
+# Example 3: Conditional query (e.g., where TECHNOLOGY is a specific type)
+specific_technology = 'YourTechnologyType'  # Replace with the actual technology type you're interested in
+print(f"\nFetching rows where TECHNOLOGY is '{specific_technology}':")
+cursor.execute(f"SELECT * FROM {table_name} WHERE TECHNOLOGY = ?", (specific_technology,))
+for row in cursor.fetchall():
+    print(row)
 
-conn.commit()
+# Close the connection
 conn.close()
