@@ -19,24 +19,25 @@ rows = cursor.fetchall()
 # Close the connection
 conn.close()
 
-# Function to parse WKT and return latitude and longitude
-def parse_wkt(wkt_str):
-    point = load_wkt(wkt_str)
-    return point.y, point.x  # Latitude, Longitude
+# Function to get centroid from geometry
+def get_centroid(wkt_str):
+    geom = load_wkt(wkt_str)
+    centroid = geom.centroid
+    return centroid.y, centroid.x  # Latitude, Longitude
 
 # Check if we have any rows
 if rows:
     # Initialize the map with a default location
     map = folium.Map(location=[0, 0], zoom_start=2)
 
-    # Update map with points from the database
+    # Update map with centroids from the database
     for row in rows:
         wkt_geom = row[0]
-        lat, lon = parse_wkt(wkt_geom)
+        lat, lon = get_centroid(wkt_geom)
         folium.Marker([lat, lon]).add_to(map)
 
-    # Center the map around the first point
-    first_lat, first_lon = parse_wkt(rows[0][0])
+    # Center the map around the centroid of the first geometry
+    first_lat, first_lon = get_centroid(rows[0][0])
     map.location = [first_lat, first_lon]
     map.zoom_start = 12
 
