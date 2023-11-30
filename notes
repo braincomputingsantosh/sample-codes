@@ -1,48 +1,65 @@
-import sqlite3
-import folium
-from shapely.wkt import loads as load_wkt
+# Python Shapefile Data Processing
 
-# Path to your SQLite database
-db_path = 'path_to_your_sqlite_database.db'
+This repository contains scripts for processing and visualizing geospatial data from shapefiles using Python. The scripts demonstrate how to read data from shapefiles, store it in an SQLite database, and then visualize it using Folium.
 
-# Connect to the SQLite database
-conn = sqlite3.connect(db_path)
-cursor = conn.cursor()
+## Prerequisites
 
-# Query to select the geometry column from your table
-query = "SELECT geometry FROM your_table_name"
-cursor.execute(query)
+Before running the scripts, ensure you have Python installed on your system. Python 3.6 or higher is recommended. You can download Python from [python.org](https://www.python.org/downloads/).
 
-# Fetch all results
-rows = cursor.fetchall()
+## Installation
 
-# Close the connection
-conn.close()
+1. **Clone the Repository**
+   
+   If you have git installed, you can clone the repository using:
+```git clone [URL to the repository]```   
 
-# Function to get centroid from geometry
-def get_centroid(wkt_str):
-    geom = load_wkt(wkt_str)
-    centroid = geom.centroid
-    return centroid.y, centroid.x  # Latitude, Longitude
+Alternatively, you can download the ZIP file of the repository and extract it.
 
-# Check if we have any rows
-if rows:
-    # Initialize the map with a default location
-    map = folium.Map(location=[0, 0], zoom_start=2)
+2. **Set up a Virtual Environment (Optional but Recommended)**
 
-    # Update map with centroids from the database
-    for row in rows:
-        wkt_geom = row[0]
-        lat, lon = get_centroid(wkt_geom)
-        folium.Marker([lat, lon]).add_to(map)
+Navigate to the project directory and create a virtual environment:
 
-    # Center the map around the centroid of the first geometry
-    first_lat, first_lon = get_centroid(rows[0][0])
-    map.location = [first_lat, first_lon]
-    map.zoom_start = 12
+```bash
+cd path/to/directory
+python -m venv venv
 
-    # Save the map to an HTML file
-    map.save('map.html')
-    print("Map has been saved as map.html")
-else:
-    print("No data found in the database.")
+Activate the virtual environment:
+
+On Windows:
+
+```venv\Scripts\activate```
+
+On macOS and Linux:
+```source venv/bin/activate```
+
+Install Required Packages
+
+Install the required Python packages using pip:
+
+bash
+Copy code
+pip install folium sqlite3 shapely
+Note: sqlite3 is included in the standard Python library and does not need to be installed separately.
+
+Running the Scripts
+Prepare Your Shapefile
+
+Ensure you have a shapefile (.shp file) ready for processing. Update the script(s) with the path to your shapefile.
+
+Run the Script to Process Shapefile and Store in SQLite
+
+bash
+Copy code
+python script_to_process_shapefile.py
+Replace script_to_process_shapefile.py with the name of your Python script file that processes the shapefile and stores it in an SQLite database.
+
+Run the Script to Visualize Data on a Map with Folium
+
+bash
+Copy code
+python script_to_visualize_data.py
+Replace script_to_visualize_data.py with the name of your Python script file that reads from the SQLite database and visualizes the data using Folium.
+
+View the Map
+
+After running the visualization script, an HTML file named map.html will be generated. Open this file in a web browser to view the map.
