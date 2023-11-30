@@ -1,15 +1,16 @@
 import sqlite3
 import folium
+from shapely.wkt import loads as load_wkt
 
 # Path to your SQLite database
-db_path = 'your_sqlite_database.db'
+db_path = 'path_to_your_sqlite_database.db'
 
 # Connect to the SQLite database
 conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
-# Query to select latitude and longitude from your table
-query = "SELECT latitude, longitude FROM your_table_name"
+# Query to select the geometry column from your table
+query = "SELECT geometry FROM your_table_name"
 cursor.execute(query)
 
 # Fetch all results
@@ -18,16 +19,26 @@ rows = cursor.fetchall()
 # Close the connection
 conn.close()
 
-# Create a map centered around the average coordinates
-if rows:
-    avg_lat = sum(row[0] for row in rows) / len(rows)
-    avg_lon = sum(row[1] for row in rows) / len(rows)
-    map = folium.Map(location=[avg_lat, avg_lon], zoom_start=12)
+# Function to parse WKT and return latitude and longitude
+def parse_wkt(wkt_str):
+    point = load_wkt(wkt_str)
+    return point.y, point.x  # Latitude, Longitude
 
-    # Add points to the map
+# Check if we have any rows
+if rows:
+    # Initialize the map with a default location
+    map = folium.Map(location=[0, 0], zoom_start=2)
+
+    # Update map with points from the database
     for row in rows:
-        lat, lon = row
-        folium.Marker(location=[lat, lon]).add_to(map)
+        wkt_geom = row[0]
+        lat, lon = parse_wkt(wkt_geom)
+        folium.Marker([lat, lon]).add_to(map)
+
+    # Center the map around the first point
+    first_lat, first_lon = parse_wkt(rows[0][0])
+    map.location = [first_lat, first_lon]
+    map.zoom_start = 12
 
     # Save the map to an HTML file
     map.save('map.html')
