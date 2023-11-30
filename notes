@@ -1,31 +1,36 @@
 import sqlite3
+import folium
 
-# SQLite setup
-db_name = 'mydatabase.db'
-table_name = 'my_shapefile_data'
+# Path to your SQLite database
+db_path = 'your_sqlite_database.db'
 
-# Connect to SQLite database
-conn = sqlite3.connect(db_name)
+# Connect to the SQLite database
+conn = sqlite3.connect(db_path)
 cursor = conn.cursor()
 
-# Example 1: Fetch all data from the table
-print("Fetching all data from the table:")
-cursor.execute(f"SELECT * FROM {table_name}")
-for row in cursor.fetchall():
-    print(row)
+# Query to select latitude and longitude from your table
+query = "SELECT latitude, longitude FROM your_table_name"
+cursor.execute(query)
 
-# Example 2: Fetch specific columns (e.g., DBA, TECHNOLOGY)
-print("\nFetching specific columns (DBA, TECHNOLOGY):")
-cursor.execute(f"SELECT DBA, TECHNOLOGY FROM {table_name}")
-for row in cursor.fetchall():
-    print(row)
-
-# Example 3: Conditional query (e.g., where TECHNOLOGY is a specific type)
-specific_technology = 'YourTechnologyType'  # Replace with the actual technology type you're interested in
-print(f"\nFetching rows where TECHNOLOGY is '{specific_technology}':")
-cursor.execute(f"SELECT * FROM {table_name} WHERE TECHNOLOGY = ?", (specific_technology,))
-for row in cursor.fetchall():
-    print(row)
+# Fetch all results
+rows = cursor.fetchall()
 
 # Close the connection
 conn.close()
+
+# Create a map centered around the average coordinates
+if rows:
+    avg_lat = sum(row[0] for row in rows) / len(rows)
+    avg_lon = sum(row[1] for row in rows) / len(rows)
+    map = folium.Map(location=[avg_lat, avg_lon], zoom_start=12)
+
+    # Add points to the map
+    for row in rows:
+        lat, lon = row
+        folium.Marker(location=[lat, lon]).add_to(map)
+
+    # Save the map to an HTML file
+    map.save('map.html')
+    print("Map has been saved as map.html")
+else:
+    print("No data found in the database.")
