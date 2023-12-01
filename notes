@@ -1,24 +1,28 @@
-Creating a table in PostgreSQL to store data from a shapefile involves defining a structure that mirrors the attributes of the shapefile and includes a column for the geometry. The PostGIS extension is used to handle the spatial data.
+WITH subquery AS (
+    SELECT 
+        rptexams.primary_key_column, -- Replace with the primary key or a unique identifier of the SV3_rpt.exams table
+        RIGHT(rptexams.event_id, LENGTH(rptexams.event_id) - 4) AS modeventid
+    FROM 
+        SV3_rpt.exams rptexams 
+    WHERE 
+        LENGTH(rptexams.event_id) = 12
+)
+UPDATE 
+    SV3_rpt.exams
+SET 
+    sv2_exam_type = exams.case_record_type
+FROM 
+    subquery
+INNER JOIN 
+    rpt.exams exams 
+ON 
+    CAST(subquery.modeventid AS FLOAT) = CAST(exams.event_id AS FLOAT)
+WHERE 
+    SV3_rpt.exams.primary_key_column = subquery.primary_key_column;
 
-Before you start, ensure that your PostgreSQL database has the PostGIS extension enabled. You can enable it by running CREATE EXTENSION postgis; in your PostgreSQL database.
 
-Here's a generic script to create a table in PostgreSQL for storing shapefile data. You'll need to adjust the column definitions to match the specifics of your shapefile:
-
-sql
-Copy code
-CREATE TABLE my_shapefile_data (
-    id SERIAL PRIMARY KEY,
-    DBA TEXT,
-    TECHNOLOGY TEXT,
-    -- Include other attribute columns here, based on the shapefile's attributes
-    -- For example: attribute1 VARCHAR(255), attribute2 INTEGER, etc.
-    geometry GEOMETRY, -- The geometry column (specify the type and SRID if known, e.g., GEOMETRY(POINT, 4326))
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-Explanation:
-
-id SERIAL PRIMARY KEY: An auto-incrementing integer used as a primary key.
-DBA TEXT, TECHNOLOGY TEXT: Example columns based on the attributes in your shapefile. Replace or add more columns to match the attributes of your shapefile.
-geometry GEOMETRY: The column to store the geometrical data. Adjust the data type as necessary. For instance, if your shapefile contains only points, you might use GEOMETRY(POINT, 4326). The SRID (Spatial Reference System Identifier), like 4326 for WGS84, should match the spatial reference system of your shapefile data.
-created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP: An optional timestamp column that records when a row was added to the table.
-Remember, the specific columns (DBA, TECHNOLOGY, etc.) and their types (TEXT, INTEGER, etc.) should align with the actual data in your shapefile. You might need to examine the shapefile (using a GIS tool or a Python library like geopandas or pyshp) to understand its structure and determine the appropriate column types.
+The CTE subquery calculates the modeventid for each row in SV3_rpt.exams where event_id has a length of 12.
+The UPDATE statement is then used to update the sv2_exam_type in SV3_rpt.exams.
+The update is based on an inner join between subquery and rpt.exams, matching on the condition that the modeventid (cast to FLOAT) equals exams.event_id (also cast to FLOAT).
+The WHERE clause in the UPDATE statement ensures that the correct rows in SV3_rpt.exams are updated. It uses a primary key or a unique identifier column for accurate row matching. You need to replace primary_key_column with the actual primary key or unique identifier column of your SV3_rpt.exams table.
+Make sure to replace primary_key_column with the actual primary key or unique identifier of the SV3_rpt.exams table. This is important to ensure that the UPDATE operation correctly identifies and updates the intended rows.
