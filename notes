@@ -1,28 +1,19 @@
-WITH subquery AS (
-    SELECT 
-        rptexams.primary_key_column, -- Replace with the primary key or a unique identifier of the SV3_rpt.exams table
-        RIGHT(rptexams.event_id, LENGTH(rptexams.event_id) - 4) AS modeventid
-    FROM 
-        SV3_rpt.exams rptexams 
-    WHERE 
-        LENGTH(rptexams.event_id) = 12
-)
-UPDATE 
-    SV3_rpt.exams
-SET 
-    sv2_exam_type = exams.case_record_type
+PostgreSQL doesn't support updating a table directly using a LEFT JOIN, you will typically use a subquery or a Common Table Expression (CTE) for this purpose.
+
+
+
+SELECT 
+    kcu.column_name
 FROM 
-    subquery
-INNER JOIN 
-    rpt.exams exams 
+    information_schema.table_constraints AS tc 
+JOIN 
+    information_schema.key_column_usage AS kcu 
 ON 
-    CAST(subquery.modeventid AS FLOAT) = CAST(exams.event_id AS FLOAT)
+    tc.constraint_name = kcu.constraint_name
+    AND tc.table_schema = kcu.table_schema
+    AND tc.table_name = kcu.table_name
 WHERE 
-    SV3_rpt.exams.primary_key_column = subquery.primary_key_column;
+    tc.table_schema = 'your_schema' -- Replace with your schema name
+    AND tc.table_name = 'your_table' -- Replace with your table name
+    AND tc.constraint_type = 'PRIMARY KEY';
 
-
-The CTE subquery calculates the modeventid for each row in SV3_rpt.exams where event_id has a length of 12.
-The UPDATE statement is then used to update the sv2_exam_type in SV3_rpt.exams.
-The update is based on an inner join between subquery and rpt.exams, matching on the condition that the modeventid (cast to FLOAT) equals exams.event_id (also cast to FLOAT).
-The WHERE clause in the UPDATE statement ensures that the correct rows in SV3_rpt.exams are updated. It uses a primary key or a unique identifier column for accurate row matching. You need to replace primary_key_column with the actual primary key or unique identifier column of your SV3_rpt.exams table.
-Make sure to replace primary_key_column with the actual primary key or unique identifier of the SV3_rpt.exams table. This is important to ensure that the UPDATE operation correctly identifies and updates the intended rows.
