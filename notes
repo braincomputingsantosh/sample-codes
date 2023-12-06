@@ -1,24 +1,35 @@
-# Import necessary libraries
+import json
 from pyspark.sql import SparkSession
 import os
 
 # Initialize Spark session
 spark = SparkSession.builder.appName("ListFiles").getOrCreate()
 
-# Define the folder path
+# Define the folder path and output file path
 folder_path = "/path/to/your/folder"
+output_path = "/dbfs/path/to/output/folder/key_value_pairs.json"
 
 # Function to get file name without extension
 def get_filename_without_extension(file_path):
     return os.path.splitext(os.path.basename(file_path))[0]
 
-# List files in the folder and create key-value pairs
-file_list = dbutils.fs.ls(folder_path)
-key_value_pairs = {file_info.path: get_filename_without_extension(file_info.path) for file_info in file_list}
+# Check if the output file already exists
+output_file_exists = dbutils.fs.ls("/dbfs/path/to/output/folder/")
+if not any(file_info.name == "key_value_pairs.json" for file_info in output_file_exists):
+    # List files in the folder and create key-value pairs
+    file_list = dbutils.fs.ls(folder_path)
+    key_value_pairs = {file_info.path: get_filename_without_extension(file_info.path) for file_info in file_list}
 
-# Display the key-value pairs
-for key, value in key_value_pairs.items():
-    print(f"Key: {key}, Value: {value}")
+    # Convert the dictionary to JSON format
+    json_data = json.dumps(key_value_pairs, indent=4)
+
+    # Write the JSON data to a file in DBFS
+    with open(output_path, 'w') as file:
+        file.write(json_data)
+
+    print(f"Key-value pairs have been written to {output_path}")
+else:
+    print("File 'key_value_pairs.json' already exists.")
 
 # Stop the Spark session
 spark.stop()
