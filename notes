@@ -1,19 +1,24 @@
-PostgreSQL doesn't support updating a table directly using a LEFT JOIN, you will typically use a subquery or a Common Table Expression (CTE) for this purpose.
+# Import necessary libraries
+from pyspark.sql import SparkSession
+import os
 
+# Initialize Spark session
+spark = SparkSession.builder.appName("ListFiles").getOrCreate()
 
+# Define the folder path
+folder_path = "/path/to/your/folder"
 
-SELECT 
-    kcu.column_name
-FROM 
-    information_schema.table_constraints AS tc 
-JOIN 
-    information_schema.key_column_usage AS kcu 
-ON 
-    tc.constraint_name = kcu.constraint_name
-    AND tc.table_schema = kcu.table_schema
-    AND tc.table_name = kcu.table_name
-WHERE 
-    tc.table_schema = 'your_schema' -- Replace with your schema name
-    AND tc.table_name = 'your_table' -- Replace with your table name
-    AND tc.constraint_type = 'PRIMARY KEY';
+# Function to get file name without extension
+def get_filename_without_extension(file_path):
+    return os.path.splitext(os.path.basename(file_path))[0]
 
+# List files in the folder and create key-value pairs
+file_list = dbutils.fs.ls(folder_path)
+key_value_pairs = {file_info.path: get_filename_without_extension(file_info.path) for file_info in file_list}
+
+# Display the key-value pairs
+for key, value in key_value_pairs.items():
+    print(f"Key: {key}, Value: {value}")
+
+# Stop the Spark session
+spark.stop()
