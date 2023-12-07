@@ -1,37 +1,26 @@
-import json
 from pyspark.sql import SparkSession
-import os
 
-# Initialize Spark session
-spark = SparkSession.builder.appName("ListFiles").getOrCreate()
+# Create Spark session
+spark = SparkSession.builder \
+    .appName("PostgreSQL Integration") \
+    .getOrCreate()
 
-# Define the folder path and output file path
-folder_path = "/path/to/your/folder"
-output_path = "/dbfs/path/to/output/folder/key_value_pairs.json"
+# PostgreSQL database details
+database_url = "jdbc:postgresql://[host]:[port]/[database]"
+properties = {
+    "user": "[username]",
+    "password": "[password]",
+    "driver": "org.postgresql.Driver"
+}
 
-def process_filename(file_name):
-    # Remove 'STRUCTURE_' prefix if present
-    if file_name.startswith("STRUCTURE_"):
-        file_name = file_name[len("STRUCTURE_"):]
+# Load data from a PostgreSQL table
+df = spark.read.jdbc(url=database_url, table="[table_name]", properties=properties)
 
-    # Remove '_COUNT' or '_INCR' suffix if present
-    if file_name.endswith("_COUNT") or file_name.endswith("_INCR"):
-        file_name = file_name.rsplit('_', 1)[0]
+# Show some data
+df.show()
 
-    return file_name
-
-# List files in the folder and create key-value pairs
-file_list = dbutils.fs.ls(folder_path)
-key_value_pairs = {os.path.basename(file_info.path): process_filename(os.path.splitext(os.path.basename(file_info.path))[0]) for file_info in file_list}
-
-# Convert the dictionary to JSON format
-json_data = json.dumps(key_value_pairs, indent=4)
-
-# Write the JSON data to a file in DBFS
-with open(output_path, 'w') as file:
-    file.write(json_data)
-
-print(f"Key-value pairs have been written to {output_path}")
+# Optionally, you can also write data back to the database
+# df.write.jdbc(url=database_url, table="[table_name]", mode="append", properties=properties)
 
 # Stop the Spark session
 spark.stop()
