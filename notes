@@ -1,26 +1,20 @@
-from pyspark.sql import SparkSession
+Data Source:
 
-# Create Spark session
-spark = SparkSession.builder \
-    .appName("PostgreSQL Integration") \
-    .getOrCreate()
+Social Explorer: This is a web-based platform that provides access to various demographic data, including census data. It typically simplifies and visualizes data for easier understanding and use.
+U.S. Census Summary File 1 (SF1): This is a direct data release from the U.S. Census Bureau. It's part of the decennial census data collection and is more raw and detailed.
+Content:
 
-# PostgreSQL database details
-database_url = "jdbc:postgresql://[host]:[port]/[database]"
-properties = {
-    "user": "[username]",
-    "password": "[password]",
-    "driver": "org.postgresql.Driver"
-}
+Social Explorer: The data dictionary here usually explains the data provided through their platform. It includes descriptions of variables, their meanings, and possibly how they correlate to the original census data variables. Social Explorer might reformat or summarize data for ease of use.
+U.S. Census SF1: The data dictionary for SF1 provides detailed descriptions of the census variables as collected. It includes technical details, precise definitions, and categorizations used in the census.
+Detail and Complexity:
 
-# Load data from a PostgreSQL table
-df = spark.read.jdbc(url=database_url, table="[table_name]", properties=properties)
+Social Explorer: Generally designed for a broader audience, including researchers, students, and the general public. It might simplify complex census terminologies and focus on the most commonly used data.
+U.S. Census SF1: Targets users who need comprehensive, detailed data. It's more technical and includes extensive information, suited for demographers, statisticians, and researchers requiring detailed census information.
+Usability:
 
-# Show some data
-df.show()
+Social Explorer: Often more user-friendly, with tools and interfaces designed to make exploring and analyzing census data simpler.
+U.S. Census SF1: More raw and may require specific software or statistical knowledge to interpret and analyze effectively.
+Updates and Versions:
 
-# Optionally, you can also write data back to the database
-# df.write.jdbc(url=database_url, table="[table_name]", mode="append", properties=properties)
-
-# Stop the Spark session
-spark.stop()
+Social Explorer: They might update their data dictionary as they process or reformat new census releases or other demographic data sets.
+U.S. Census SF1: The data dictionary is specific to the SF1 and is updated or revised only when there's a new census or significant changes in data collection methods.
