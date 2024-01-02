@@ -1,19 +1,20 @@
-The statement you provided describes a situation where there's a difference in the naming and numbering convention of variables between the original 2010 Census data (as found on Social Explorer) and another version of the data you have. Let's break down the key points:
+# Define the columns and their data types
+columns = 'DHCST TEXT, STUSAB TEXT, SUMLEVEL INTEGER'
 
-Original Data on Social Explorer:
+# Function to convert the column definition to a SQL CREATE TABLE script
+def create_table_script(table_name, columns):
+    # Split the columns string into individual column definitions
+    column_definitions = columns.split(', ')
+    # Start the CREATE TABLE script
+    script = f"CREATE TABLE {table_name} (\n"
+    # Add each column definition to the script
+    for column in column_definitions:
+        script += f"    {column},\n"
+    # Remove the last comma and add closing parenthesis
+    script = script.rstrip(',\n') + '\n);'
+    return script
 
-In the original 2010 Census data available on Social Explorer, the HCT1 table (presumably related to housing characteristics or similar) contains variables named HCT001001 through HCT001035. This naming convention suggests a systematic approach where HCT001 is a prefix indicating the table, followed by a three-digit number indicating the specific variable within that table.
-Altered Data in Your Version:
-
-In the version of the data you are referring to, the variables in the HCT1 table are named differently. They are labeled as hct1-0 through hct1-34. This suggests a more simplified naming convention:
-The prefix hct1 is a simplified version of HCT001.
-The numbering starts from 0 and goes up to 34, instead of starting from 001 and going to 035.
-Mapping Between the Two Versions:
-
-It appears that each variable from the original data has a corresponding variable in your version, but with a simplified name. For example, HCT001001 in the original data seems to correspond to hct1-0 in your version.
-The difference in numbering (starting from 0 in your version vs. starting from 001 in the original) suggests that your version uses zero-based indexing, which is common in many programming contexts.
-Implications:
-
-This difference in naming and numbering conventions can be important when analyzing the data or when trying to match variables between different versions of the dataset.
-If you are using this data for analysis or comparison, you'll need to be aware of these differences to ensure accurate data interpretation.
-In summary, the statement indicates a reformatting of the variable names and numbering from the original 2010 Census data (as represented on Social Explorer) in the version of the data you have. This reformatting involves a simplification of the variable names and a shift to zero-based numbering.
+# Example usage
+table_name = "DHC"
+sql_script = create_table_script(table_name, columns)
+print(sql_script)
