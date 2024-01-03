@@ -1,58 +1,34 @@
-# Reload the file and read the specified worksheet "Layout Clean"
-file_path = '/mnt/data/file_layout_2020_DHC-National.xlsx'
-worksheet_name = 'Layout Clean'
-df_layout_clean = pd.read_excel(file_path, sheet_name=worksheet_name)
+import pandas as pd
 
-# Generate SQL CREATE TABLE script
-def generate_create_table_script(df, table_name):
-    dtype_map = {
-        'object': 'TEXT',
-        'int64': 'BIGINT',
-        'float64': 'DOUBLE PRECISION',
-        'datetime64[ns]': 'TIMESTAMP',
-        'bool': 'BOOLEAN'
-    }
+def generate_insert_statements(file_path, table_name):
+    # Read the file into a DataFrame
+    df = pd.read_csv(file_path, sep='|')
 
-    script = f"CREATE TABLE {table_name} (\n"
-    for column in df.columns:
-        pandas_dtype = str(df[column].dtype)
-        sql_dtype = dtype_map.get(pandas_dtype, 'TEXT')
-        script += f"    \"{column}\" {sql_dtype},\n"
-    script = script[:-2] + "\n);"
-
-    return script
-
-# Generate SQL INSERT INTO script
-def generate_insert_into_script(df, table_name):
-    insert_script = f"INSERT INTO {table_name} VALUES\n"
-    rows = []
+    # Start building the INSERT statements
+    insert_statements = []
 
     for _, row in df.iterrows():
+        # Prepare the values for insertion (handle strings and NULLs appropriately)
         values = []
         for value in row:
             if pd.isna(value):
                 values.append('NULL')
             elif isinstance(value, str):
+                # Escape single quotes for SQL
                 value = value.replace("'", "''")
                 values.append(f"'{value}'")
             else:
                 values.append(str(value))
-        row_str = ", ".join(values)
-        rows.append(f"({row_str})")
+        values_str = ', '.join(values)
 
-    insert_script += ",\n".join(rows) + ";"
-    return insert_script
+        # Add the INSERT statement for this row
+        insert_statements.append(f"INSERT INTO {table_name} VALUES ({values_str});")
 
-# Table name for the "Layout Clean" sheet
-table_name_layout_clean = "Census_2020_DHC.dbo.layoutDHC2020_LayoutClean"
+    return '\n'.join(insert_statements)
 
-# Generate the scripts
-create_table_script_layout_clean = generate_create_table_script(df_layout_clean, table_name_layout_clean)
-insert_script_layout_clean = generate_insert_into_script(df_layout_clean, table_name_layout_clean)
+# Example usage
+file_path = 'path_to_your_data_file.txt'  # Replace with your file path
+table_name = 'your_table_name'            # Replace with your table name
 
-# Due to length, save the insert script to a file
-insert_script_path_layout_clean = '/mnt/data/insert_layoutClean2020_Geo.sql'
-with open(insert_script_path_layout_clean, 'w') as file:
-    file.write(insert_script_layout_clean)
-
-(create_table_script_layout_clean, insert_script_path_layout_clean)
+insert_statements = generate_insert_statements(file_path, table_name)
+print(insert_statements)
