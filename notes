@@ -3,22 +3,19 @@ def generate_create_table_script(table_name, columns_list):
     Generates a CREATE TABLE script for PostgreSQL.
 
     Parameters:
-    - table_name (str): Name of the table.
-    - columns_list (str): Comma-separated list of column names.
+    table_name (str): Name of the table.
+    columns_list (list of str): List of column names.
 
     Returns:
-    - str: SQL CREATE TABLE script.
+    str: SQL CREATE TABLE script.
     """
-
-    # Splitting the comma-separated list into individual column names
-    columns = columns_list.split(',')
 
     # Start the CREATE TABLE script
     script = f"CREATE TABLE {table_name} (\n"
 
     # Adding each column to the script with VARCHAR(255) as the data type
-    for column in columns:
-        script += f"    {column.strip()} VARCHAR(255),\n"
+    for column in columns_list:
+        script += f"    {column} VARCHAR(255),\n"
 
     # Removing the last comma and closing the script
     script = script.rstrip(',\n') + '\n);'
@@ -27,7 +24,7 @@ def generate_create_table_script(table_name, columns_list):
 
 # Example usage
 table_name = "your_table_name"  # Replace with your table name
-columns_list = "column1, column2, column3"  # Replace with your column names
+columns_list = ["FILEID", "STUSAB", "SUMLEV", "GEOCOMP"]  # Provided column names
 create_table_script = generate_create_table_script(table_name, columns_list)
 
 print(create_table_script)
