@@ -32,3 +32,5 @@ table_name = 'your_table_name'            # Replace with your table name
 
 insert_statements = generate_insert_statements(file_path, table_name)
 print(insert_statements)
+
+# https://github.com/vengroff/censusdis/blob/main/notebooks/DHC-A.ipynb
