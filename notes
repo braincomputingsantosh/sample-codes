@@ -1,36 +1,33 @@
-import pandas as pd
+def generate_create_table_script(table_name, columns_list):
+    """
+    Generates a CREATE TABLE script for PostgreSQL.
 
-def generate_insert_statements(file_path, table_name):
-    # Read the file into a DataFrame
-    df = pd.read_csv(file_path, sep='|')
+    Parameters:
+    - table_name (str): Name of the table.
+    - columns_list (str): Comma-separated list of column names.
 
-    # Start building the INSERT statements
-    insert_statements = []
+    Returns:
+    - str: SQL CREATE TABLE script.
+    """
 
-    for _, row in df.iterrows():
-        # Prepare the values for insertion (handle strings and NULLs appropriately)
-        values = []
-        for value in row:
-            if pd.isna(value):
-                values.append('NULL')
-            elif isinstance(value, str):
-                # Escape single quotes for SQL
-                value = value.replace("'", "''")
-                values.append(f"'{value}'")
-            else:
-                values.append(str(value))
-        values_str = ', '.join(values)
+    # Splitting the comma-separated list into individual column names
+    columns = columns_list.split(',')
 
-        # Add the INSERT statement for this row
-        insert_statements.append(f"INSERT INTO {table_name} VALUES ({values_str});")
+    # Start the CREATE TABLE script
+    script = f"CREATE TABLE {table_name} (\n"
 
-    return '\n'.join(insert_statements)
+    # Adding each column to the script with VARCHAR(255) as the data type
+    for column in columns:
+        script += f"    {column.strip()} VARCHAR(255),\n"
+
+    # Removing the last comma and closing the script
+    script = script.rstrip(',\n') + '\n);'
+
+    return script
 
 # Example usage
-file_path = 'path_to_your_data_file.txt'  # Replace with your file path
-table_name = 'your_table_name'            # Replace with your table name
+table_name = "your_table_name"  # Replace with your table name
+columns_list = "column1, column2, column3"  # Replace with your column names
+create_table_script = generate_create_table_script(table_name, columns_list)
 
-insert_statements = generate_insert_statements(file_path, table_name)
-print(insert_statements)
-
-# https://github.com/vengroff/censusdis/blob/main/notebooks/DHC-A.ipynb
+print(create_table_script)
