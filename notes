@@ -1,23 +1,62 @@
+import zipfile
 import os
-from databricks_cli.sdk.api_client import ApiClient
-from databricks_cli.dbfs.api import DbfsApi
+import psycopg2
 
-# Configure the API client
-api_client = ApiClient(host="DATABRICKS_HOST", token="DATABRICKS_TOKEN")
-dbfs_api = DbfsApi(api_client)
+def extract_zip_and_get_shapefile(zip_path, extract_to_folder):
+    # Extract the ZIP file
+    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+        zip_ref.extractall(extract_to_folder)
 
-def copy_to_dbfs(local_dir, dbfs_dir):
-    for root, dirs, files in os.walk(local_dir):
+    # Search for the SHAPE file
+    for root, dirs, files in os.walk(extract_to_folder):
         for file in files:
-            local_path = os.path.join(root, file)
-            relative_path = os.path.relpath(local_path, local_dir)
-            dbfs_path = os.path.join(dbfs_dir, relative_path)
+            if file.endswith(".shp"):
+                return os.path.join(root, file)
+    
+    # If no SHAPE file is found
+    return None
 
-            print(f"Copying {local_path} to {dbfs_path}")
-            dbfs_api.cp(recursive=False, src=local_path, dst=dbfs_path, overwrite=True)
+def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
+    # Connect to the PostgreSQL database
+    conn = psycopg2.connect(**db_params)
+    cursor = conn.cursor()
 
-# Set your local directory and DBFS destination directory
-local_directory = "/path/to/local/directory"
-dbfs_directory = "dbfs:/path/to/dbfs/directory"
+    # Create table if it doesn't exist
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS file_paths (
+            id SERIAL PRIMARY KEY,
+            zip_path TEXT,
+            extract_folder TEXT,
+            shape_file_path TEXT
+        );
+    ''')
 
-copy_to_dbfs(local_directory, dbfs_directory)
+    # Insert the paths into the table
+    cursor.execute('''
+        INSERT INTO file_paths (zip_path, extract_folder, shape_file_path)
+        VALUES (%s, %s, %s)
+    ''', (zip_path, extract_folder, shape_file_path))
+
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Database connection parameters
+db_params = {
+    'dbname': 'your_dbname',
+    'user': 'your_username',
+    'password': 'your_password',
+    'host': 'your_host'
+}
+
+# Example usage
+zip_file_path = 'path_to_your_zip_file.zip'  # Replace with your ZIP file path
+extract_folder = 'path_to_extract_folder'    # Replace with your desired extract folder path
+shape_file_path = extract_zip_and_get_shapefile(zip_file_path, extract_folder)
+
+if shape_file_path:
+    print(f"SHAPE file found at: {shape_file_path}")
+    save_paths_to_db(zip_file_path, extract_folder, shape_file_path, db_params)
+    print("Paths saved to database.")
+else:
+    print("No SHAPE file found in the ZIP archive.")
