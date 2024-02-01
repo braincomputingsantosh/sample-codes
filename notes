@@ -3,25 +3,20 @@ import os
 import psycopg2
 
 def extract_zip_and_get_shapefile(zip_path, extract_to_folder):
-    # Extract the ZIP file
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(extract_to_folder)
 
-    # Search for the SHAPE file
     for root, dirs, files in os.walk(extract_to_folder):
         for file in files:
             if file.endswith(".shp"):
                 return os.path.join(root, file)
     
-    # If no SHAPE file is found
     return None
 
 def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
-    # Connect to the PostgreSQL database
     conn = psycopg2.connect(**db_params)
     cursor = conn.cursor()
 
-    # Create table if it doesn't exist
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS file_paths (
             id SERIAL PRIMARY KEY,
@@ -31,7 +26,6 @@ def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
         );
     ''')
 
-    # Insert the paths into the table
     cursor.execute('''
         INSERT INTO file_paths (zip_path, extract_folder, shape_file_path)
         VALUES (%s, %s, %s)
@@ -40,6 +34,28 @@ def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
     conn.commit()
     cursor.close()
     conn.close()
+
+def process_folder(folder_path, output_folder, db_params):
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+
+    for file in os.listdir(folder_path):
+        if file.endswith('.zip'):
+            zip_file_path = os.path.join(folder_path, file)
+            extract_folder_name = os.path.splitext(file)[0]
+            extract_folder_path = os.path.join(output_folder, extract_folder_name)
+
+            if not os.path.exists(extract_folder_path):
+                os.makedirs(extract_folder_path)
+
+            shape_file_path = extract_zip_and_get_shapefile(zip_file_path, extract_folder_path)
+
+            if shape_file_path:
+                print(f"SHAPE file found at: {shape_file_path}")
+                save_paths_to_db(zip_file_path, extract_folder_path, shape_file_path, db_params)
+                print(f"Paths saved to database for {file}.")
+            else:
+                print(f"No SHAPE file found in the ZIP archive: {zip_file_path}")
 
 # Database connection parameters
 db_params = {
@@ -50,13 +66,6 @@ db_params = {
 }
 
 # Example usage
-zip_file_path = 'path_to_your_zip_file.zip'  # Replace with your ZIP file path
-extract_folder = 'path_to_extract_folder'    # Replace with your desired extract folder path
-shape_file_path = extract_zip_and_get_shapefile(zip_file_path, extract_folder)
-
-if shape_file_path:
-    print(f"SHAPE file found at: {shape_file_path}")
-    save_paths_to_db(zip_file_path, extract_folder, shape_file_path, db_params)
-    print("Paths saved to database.")
-else:
-    print("No SHAPE file found in the ZIP archive.")
+folder_to_scan = 'path_to_folder_containing_zip_files'  # Replace with your folder path
+output_folder = 'path_to_output_folder'                 # Replace with your output folder path
+process_folder(folder_to_scan, output_folder, db_params)
