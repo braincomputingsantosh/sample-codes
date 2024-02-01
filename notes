@@ -23,31 +23,21 @@ def extract_zip_and_get_shapefile(zip_path, extract_to_folder):
     extract_zip_recursive(zip_path, extract_to_folder)
     return shape_file_info
 
-def save_file_info_to_db(file_info, db_params):
+def save_file_info_to_db(file_info, project_name, db_params):
     conn = psycopg2.connect(**db_params)
     cursor = conn.cursor()
 
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS file_info (
-            id SERIAL PRIMARY KEY,
-            file_name TEXT,
-            file_path TEXT,
-            file_type TEXT,
-            file_size BIGINT
-        );
-    ''')
-
     for file_name, file_path, file_type, file_size in file_info:
         cursor.execute('''
-            INSERT INTO file_info (file_name, file_path, file_type, file_size)
-            VALUES (%s, %s, %s, %s)
-        ''', (file_name, file_path, file_type, file_size))
+            INSERT INTO file_info (file_name, file_path, file_type, file_size, project_name)
+            VALUES (%s, %s, %s, %s, %s)
+        ''', (file_name, file_path, file_type, file_size, project_name))
 
     conn.commit()
     cursor.close()
     conn.close()
 
-def process_folder(folder_path, output_folder, db_params):
+def process_folder(folder_path, output_folder, project_name, db_params):
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
 
@@ -63,7 +53,7 @@ def process_folder(folder_path, output_folder, db_params):
             shape_file_info = extract_zip_and_get_shapefile(zip_file_path, extract_folder_path)
 
             if shape_file_info:
-                save_file_info_to_db(shape_file_info, db_params)
+                save_file_info_to_db(shape_file_info, project_name, db_params)
                 print(f"File info saved to database for {file}.")
             else:
                 print(f"No SHAPE file found in the ZIP archive: {zip_file_path}")
@@ -79,4 +69,5 @@ db_params = {
 # Example usage
 folder_to_scan = 'path_to_folder_containing_zip_files'  # Replace with your folder path
 output_folder = 'path_to_output_folder'                 # Replace with your output folder path
-process_folder(folder_to_scan, output_folder, db_params)
+default_project_name = 'default_project'                # Replace with your default project name
+process_folder(folder_to_scan, output_folder, default_project_name, db_params)
