@@ -3,17 +3,27 @@ import os
 import psycopg2
 
 def extract_zip_and_get_shapefile(zip_path, extract_to_folder):
-    with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-        zip_ref.extractall(extract_to_folder)
+    # Recursive function to extract zip files
+    def extract_zip_recursive(zip_path, extract_to_folder):
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall(extract_to_folder)
 
-    for root, dirs, files in os.walk(extract_to_folder):
-        for file in files:
-            if file.endswith(".shp"):
-                return os.path.join(root, file)
-    
-    return None
+        for root, dirs, files in os.walk(extract_to_folder):
+            for file in files:
+                if file.endswith(".shp"):
+                    shape_file_paths.append(os.path.join(root, file))
+                elif file.endswith(".zip"):
+                    nested_zip_path = os.path.join(root, file)
+                    nested_extract_folder = os.path.join(root, os.path.splitext(file)[0])
+                    if not os.path.exists(nested_extract_folder):
+                        os.makedirs(nested_extract_folder)
+                    extract_zip_recursive(nested_zip_path, nested_extract_folder)
 
-def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
+    shape_file_paths = []
+    extract_zip_recursive(zip_path, extract_to_folder)
+    return shape_file_paths
+
+def save_paths_to_db(zip_path, extract_folder, shape_file_paths, db_params):
     conn = psycopg2.connect(**db_params)
     cursor = conn.cursor()
 
@@ -26,10 +36,11 @@ def save_paths_to_db(zip_path, extract_folder, shape_file_path, db_params):
         );
     ''')
 
-    cursor.execute('''
-        INSERT INTO file_paths (zip_path, extract_folder, shape_file_path)
-        VALUES (%s, %s, %s)
-    ''', (zip_path, extract_folder, shape_file_path))
+    for shape_file_path in shape_file_paths:
+        cursor.execute('''
+            INSERT INTO file_paths (zip_path, extract_folder, shape_file_path)
+            VALUES (%s, %s, %s)
+        ''', (zip_path, extract_folder, shape_file_path))
 
     conn.commit()
     cursor.close()
@@ -48,11 +59,12 @@ def process_folder(folder_path, output_folder, db_params):
             if not os.path.exists(extract_folder_path):
                 os.makedirs(extract_folder_path)
 
-            shape_file_path = extract_zip_and_get_shapefile(zip_file_path, extract_folder_path)
+            shape_file_paths = extract_zip_and_get_shapefile(zip_file_path, extract_folder_path)
 
-            if shape_file_path:
-                print(f"SHAPE file found at: {shape_file_path}")
-                save_paths_to_db(zip_file_path, extract_folder_path, shape_file_path, db_params)
+            if shape_file_paths:
+                for shape_file_path in shape_file_paths:
+                    print(f"SHAPE file found at: {shape_file_path}")
+                save_paths_to_db(zip_file_path, extract_folder_path, shape_file_paths, db_params)
                 print(f"Paths saved to database for {file}.")
             else:
                 print(f"No SHAPE file found in the ZIP archive: {zip_file_path}")
