@@ -1,41 +1,46 @@
 import sqlite3
 import folium
 from shapely.wkb import loads
-from folium.vector_layers import Polygon
+import binascii  # Import binascii for hexadecimal conversion
 
 # Connect to the SQLite database
 conn = sqlite3.connect('your_database.db')  # Replace 'your_database.db' with your database file
 cursor = conn.cursor()
 
 # Query to select the WKB MultiPolygon data from your table
-# Replace 'your_table' with your table name and 'wkb_column' with the name of the column containing the WKB data
-query = "SELECT wkb_column FROM your_table"
+query = "SELECT wkb_column FROM your_table"  # Replace 'your_table' and 'wkb_column'
 cursor.execute(query)
 
 # Fetch one record (or use fetchall() if you expect multiple geometries)
 record = cursor.fetchone()
 
-# Assuming record contains WKB data, convert it from binary to a Shapely geometry object
-wkb_data = record[0]
-geometry = loads(bytes(wkb_data))
-
 # Close the database connection
 conn.close()
 
-# Check if the geometry is a MultiPolygon and display it using Folium
-if geometry.geom_type == 'MultiPolygon':
-    # Initialize a Folium map. You might want to adjust the location and zoom_start parameters.
-    m = folium.Map(location=[geometry.centroid.y, geometry.centroid.x], zoom_start=12)
-    
-    # Folium requires coordinates in a nested list format for MultiPolygons
-    # Convert each Polygon in the MultiPolygon to a list of exterior coordinates
-    for polygon in geometry:
-        # Extract the exterior coordinates of the polygon
-        exterior_coords = list(polygon.exterior.coords)
-        # Add the polygon to the map
-        folium.Polygon(locations=exterior_coords, color='blue', fill=True, fill_color='cyan').add_to(m)
-    
-    # Display the map
-    display(m)  # If running in Jupyter Notebook/Lab, or use `m.save('map.html')` to save the map to an HTML file and view it in a browser
+if record:
+    # Assuming record contains WKB data in hexadecimal string format
+    wkb_hex = record[0]
+
+    # Convert the hex string to binary
+    wkb_binary = binascii.unhexlify(wkb_hex)
+
+    # Convert WKB binary to a Shapely geometry object
+    geometry = loads(wkb_binary)
+
+    # Check if the geometry is a MultiPolygon and display it using Folium
+    if geometry.geom_type == 'MultiPolygon':
+        # Initialize a Folium map centered around the geometry's centroid
+        m = folium.Map(location=[geometry.centroid.y, geometry.centroid.x], zoom_start=12)
+        
+        # Iterate through each Polygon in the MultiPolygon
+        for polygon in geometry:
+            exterior_coords = list(polygon.exterior.coords)
+            folium.Polygon(locations=exterior_coords, color='blue', fill=True, fill_color='cyan').add_to(m)
+        
+        # Display the map in Jupyter Notebook or save to HTML
+        # display(m)  # Use in Jupyter Notebook
+        m.save('map.html')  # Save to HTML file for viewing in a browser
+    else:
+        print("The geometry is not a MultiPolygon.")
 else:
-    print("The geometry is not a MultiPolygon.")
+    print("No record found.")
