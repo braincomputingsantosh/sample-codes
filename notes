@@ -1,46 +1,23 @@
-import sqlite3
-import folium
-from shapely.wkb import loads
-import binascii  # Import binascii for hexadecimal conversion
+Checks if the Calendared field is blank.
+If Calendared is blank, it looks up the Event ID in a range named Calendared. If it finds a match and the corresponding value is greater than 0, it sets the value to "Yes".
+If no match is found (IFNA part), it defaults to "No".
+If Calendared is not blank, it directly uses the value of Calendared.
 
-# Connect to the SQLite database
-conn = sqlite3.connect('your_database.db')  # Replace 'your_database.db' with your database file
-cursor = conn.cursor()
 
-# Query to select the WKB MultiPolygon data from your table
-query = "SELECT wkb_column FROM your_table"  # Replace 'your_table' and 'wkb_column'
-cursor.execute(query)
 
-# Fetch one record (or use fetchall() if you expect multiple geometries)
-record = cursor.fetchone()
-
-# Close the database connection
-conn.close()
-
-if record:
-    # Assuming record contains WKB data in hexadecimal string format
-    wkb_hex = record[0]
-
-    # Convert the hex string to binary
-    wkb_binary = binascii.unhexlify(wkb_hex)
-
-    # Convert WKB binary to a Shapely geometry object
-    geometry = loads(wkb_binary)
-
-    # Check if the geometry is a MultiPolygon and display it using Folium
-    if geometry.geom_type == 'MultiPolygon':
-        # Initialize a Folium map centered around the geometry's centroid
-        m = folium.Map(location=[geometry.centroid.y, geometry.centroid.x], zoom_start=12)
-        
-        # Iterate through each Polygon in the MultiPolygon
-        for polygon in geometry:
-            exterior_coords = list(polygon.exterior.coords)
-            folium.Polygon(locations=exterior_coords, color='blue', fill=True, fill_color='cyan').add_to(m)
-        
-        # Display the map in Jupyter Notebook or save to HTML
-        # display(m)  # Use in Jupyter Notebook
-        m.save('map.html')  # Save to HTML file for viewing in a browser
-    else:
-        print("The geometry is not a MultiPolygon.")
-else:
-    print("No record found.")
+CREATE OR REPLACE FUNCTION update_est_calendared()
+RETURNS VOID AS
+$$
+BEGIN
+    UPDATE Exams
+    SET EST_CALENDARED = CASE
+        WHEN Calendared IS NULL OR Calendared = '' THEN
+            CASE
+                WHEN EXISTS(SELECT 1 FROM Exams e WHERE e.Event_ID = Exams.Event_ID AND e.Calendared > 0) THEN 'Yes'
+                ELSE 'No'
+            END
+        ELSE Calendared
+    END;
+END;
+$$
+LANGUAGE plpgsql;
