@@ -1,21 +1,17 @@
-CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list text)
-LANGUAGE plpgsql
-AS $$
-DECLARE
-    event_ids text[];
-BEGIN
-    -- Convert comma-separated list to array
-    event_ids := string_to_array(event_id_list, ',');
-    
-    -- Update logic
-    UPDATE events
-    SET est_calendared = CASE
-        WHEN Calendared IS NULL OR Calendared = '' THEN
-            CASE
-                WHEN Event_ID = ANY (event_ids) THEN 'Yes'
-                ELSE 'No'
-            END
-        ELSE Calendared
-    END;
-END;
-$$;
+WITH event_ids AS (
+    SELECT unnest(string_to_array('your_event_id_list_here', ',')) AS event_id
+),
+calculated_updates AS (
+    SELECT
+        e.*,
+        CASE
+            WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+                CASE
+                    WHEN e.Event_ID = ANY (SELECT event_id FROM event_ids) THEN 'Yes'
+                    ELSE 'No'
+                END
+            ELSE e.Calendared
+        END AS proposed_est_calendared
+    FROM public.exams e
+)
+SELECT * FROM calculated_updates;
