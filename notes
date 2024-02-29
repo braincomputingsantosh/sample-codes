@@ -1,15 +1,21 @@
-SELECT
-    Event_ID,
-    Calendared,
-    CASE
+CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list TEXT)
+LANGUAGE plpgsql
+AS $$
+DECLARE
+    event_ids TEXT[];
+BEGIN
+    -- Convert comma-separated list to array
+    event_ids := string_to_array(event_id_list, ',');
+
+    -- Update logic based on array of Event_IDs
+    UPDATE events
+    SET est_calendared = CASE
         WHEN Calendared IS NULL OR Calendared = '' THEN
             CASE
-                WHEN EXISTS (
-                    SELECT 1 FROM events e WHERE e.Event_ID = events.Event_ID AND e.Calendared > '0'
-                ) THEN 'Yes'
+                WHEN Event_ID = ANY(event_ids) THEN 'Yes'
                 ELSE 'No'
             END
         ELSE Calendared
-    END AS est_calendared_check
-FROM events
-WHERE Event_ID = 'specific_event_id';
+    END;
+END;
+$$;
