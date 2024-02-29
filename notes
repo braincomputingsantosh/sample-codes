@@ -1,29 +1,38 @@
 CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list TEXT)
 LANGUAGE plpgsql
 AS $$
-DECLARE
-    _event_id VARCHAR;
 BEGIN
+    RAISE NOTICE 'Starting update_est_calendared procedure with event_id_list: %', event_id_list;
+    
     -- Create a temporary table to hold formatted event_ids
     CREATE TEMP TABLE IF NOT EXISTS temp_event_ids (event_id VARCHAR PRIMARY KEY) ON COMMIT DROP;
     
+    RAISE DEBUG 'Temporary table temp_event_ids created or already exists.';
+    
     -- Empty the temporary table in case it already exists
     TRUNCATE temp_event_ids;
+    
+    RAISE DEBUG 'Temporary table temp_event_ids truncated.';
     
     -- Populate the temporary table with formatted event_ids from the input list
     INSERT INTO temp_event_ids (event_id)
     SELECT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
     
-    -- Assuming a separate operation to determine and raise notice for each event_id
-    FOR _event_id IN SELECT event_id FROM temp_event_ids LOOP
-        IF EXISTS (SELECT 1 FROM public.exams WHERE Event_ID = _event_id AND (Calendared IS NULL OR Calendared = '')) THEN
-            RAISE NOTICE 'Event_ID % is being set to Yes', _event_id;
-        ELSE
-            RAISE NOTICE 'Event_ID % is being set to No or remains unchanged', _event_id;
-        END IF;
-    END LOOP;
-
-    -- Then, perform your update logic as required, without the raise notice inside the case
-    -- (Your existing update logic here)
+    RAISE NOTICE 'Populated temp_event_ids with formatted event IDs.';
+    
+    -- Update logic on public.exams using a JOIN with the temporary table
+    UPDATE public.exams e
+    SET est_calendared = CASE
+        WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+            CASE
+                WHEN te.event_id IS NOT NULL THEN 'Yes'
+                ELSE 'No'
+            END
+        ELSE e.Calendared
+    END
+    FROM temp_event_ids te
+    WHERE e.Event_ID = te.event_id;
+    
+    RAISE NOTICE 'Update operation completed.';
 END;
 $$;
