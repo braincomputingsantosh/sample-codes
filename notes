@@ -1,4 +1,4 @@
-CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list VARCHAR)
+CREATE OR REPLACE PROCEDURE update_est_calendared_mastered(event_id_list VARCHAR)
 LANGUAGE plpgsql
 AS $$
 BEGIN
@@ -12,8 +12,8 @@ BEGIN
     INSERT INTO temp_event_ids (event_id)
     SELECT unnest(string_to_array(event_id_list, ','));
     
-    -- Update logic with JOIN
-    UPDATE events e
+    -- Update logic corrected for public.exams table
+    UPDATE public.exams e
     SET est_calendared = CASE
         WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
             CASE
@@ -22,7 +22,7 @@ BEGIN
             END
         ELSE e.Calendared
     END
-    FROM events e
-    LEFT JOIN temp_event_ids te ON e.Event_ID = te.event_id;
+    FROM temp_event_ids te
+    WHERE e.Event_ID = te.event_id;
 END;
 $$;
