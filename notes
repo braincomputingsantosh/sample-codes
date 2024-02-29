@@ -1,23 +1,15 @@
-Checks if the Calendared field is blank.
-If Calendared is blank, it looks up the Event ID in a range named Calendared. If it finds a match and the corresponding value is greater than 0, it sets the value to "Yes".
-If no match is found (IFNA part), it defaults to "No".
-If Calendared is not blank, it directly uses the value of Calendared.
-
-
-
-CREATE OR REPLACE FUNCTION update_est_calendared()
-RETURNS VOID AS
-$$
-BEGIN
-    UPDATE Exams
-    SET EST_CALENDARED = CASE
+SELECT
+    Event_ID,
+    Calendared,
+    CASE
         WHEN Calendared IS NULL OR Calendared = '' THEN
             CASE
-                WHEN EXISTS(SELECT 1 FROM Exams e WHERE e.Event_ID = Exams.Event_ID AND e.Calendared > 0) THEN 'Yes'
+                WHEN EXISTS (
+                    SELECT 1 FROM events e WHERE e.Event_ID = events.Event_ID AND e.Calendared > '0'
+                ) THEN 'Yes'
                 ELSE 'No'
             END
         ELSE Calendared
-    END;
-END;
-$$
-LANGUAGE plpgsql;
+    END AS est_calendared_check
+FROM events
+WHERE Event_ID = 'specific_event_id';
