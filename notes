@@ -1,8 +1,6 @@
-CREATE OR REPLACE FUNCTION update_est_calendared(event_id_list TEXT)
-RETURNS INTEGER
-LANGUAGE plpgsql
-AS $$
+DO $$
 DECLARE
+    event_id_list TEXT := '11521,2521,5214,521';
     affected_rows INTEGER;
 BEGIN
     -- Create a temporary table to hold formatted event_ids
@@ -15,24 +13,23 @@ BEGIN
     INSERT INTO temp_event_ids (event_id)
     SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
     
-    -- Update logic on public.exams using a JOIN with the temporary table
-    WITH upd AS (
-        UPDATE public.exams e
-        SET est_calendared = CASE
-            WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
-                CASE
-                    WHEN te.event_id IS NOT NULL THEN 'Yes'
-                    ELSE 'No'
-                END
-            ELSE e.Calendared
-        END
-        FROM temp_event_ids te
-        WHERE e.Event_ID = te.event_id
-        RETURNING e.*
+    -- Simulate the update logic on public.exams using a JOIN with the temporary table
+    WITH simulated_update AS (
+        SELECT 
+            e.*,
+            CASE
+                WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+                    CASE
+                        WHEN te.event_id IS NOT NULL THEN 'Yes'
+                        ELSE 'No'
+                    END
+                ELSE e.Calendared
+            END AS proposed_est_calendared
+        FROM public.exams e
+        LEFT JOIN temp_event_ids te ON e.Event_ID = te.event_id
     )
-    SELECT COUNT(*) INTO affected_rows FROM upd;
-    
-    -- Return the number of affected rows
-    RETURN affected_rows;
-END;
-$$;
+    SELECT * FROM simulated_update;
+
+    -- Cleanup: Optionally drop the temporary table to avoid clutter
+    DROP TABLE IF EXISTS temp_event_ids;
+END $$;
