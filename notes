@@ -2,23 +2,15 @@ CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list TEXT)
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    RAISE NOTICE 'Starting update_est_calendared procedure with event_id_list: %', event_id_list;
-    
     -- Create a temporary table to hold formatted event_ids
     CREATE TEMP TABLE IF NOT EXISTS temp_event_ids (event_id VARCHAR PRIMARY KEY) ON COMMIT DROP;
-    
-    RAISE DEBUG 'Temporary table temp_event_ids created or already exists.';
     
     -- Empty the temporary table in case it already exists
     TRUNCATE temp_event_ids;
     
-    RAISE DEBUG 'Temporary table temp_event_ids truncated.';
-    
-    -- Populate the temporary table with formatted event_ids from the input list
+    -- Populate the temporary table with unique formatted event_ids from the input list
     INSERT INTO temp_event_ids (event_id)
-    SELECT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
-    
-    RAISE NOTICE 'Populated temp_event_ids with formatted event IDs.';
+    SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
     
     -- Update logic on public.exams using a JOIN with the temporary table
     UPDATE public.exams e
@@ -32,7 +24,5 @@ BEGIN
     END
     FROM temp_event_ids te
     WHERE e.Event_ID = te.event_id;
-    
-    RAISE NOTICE 'Update operation completed.';
 END;
 $$;
