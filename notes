@@ -1,28 +1,21 @@
-CREATE OR REPLACE PROCEDURE update_est_calendared_mastered(event_id_list VARCHAR)
+CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list text)
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    event_ids text[];
 BEGIN
-    -- Temporary table to hold event_ids from the list
-    CREATE TEMP TABLE IF NOT EXISTS temp_event_ids (event_id VARCHAR PRIMARY KEY) ON COMMIT DROP;
+    -- Convert comma-separated list to array
+    event_ids := string_to_array(event_id_list, ',');
     
-    -- Empty the temporary table in case it already exists
-    TRUNCATE temp_event_ids;
-    
-    -- Populate the temporary table with event_ids from the input list
-    INSERT INTO temp_event_ids (event_id)
-    SELECT unnest(string_to_array(event_id_list, ','));
-    
-    -- Update logic corrected for public.exams table
-    UPDATE public.exams e
+    -- Update logic
+    UPDATE events
     SET est_calendared = CASE
-        WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+        WHEN Calendared IS NULL OR Calendared = '' THEN
             CASE
-                WHEN te.event_id IS NOT NULL THEN 'Yes'
+                WHEN Event_ID = ANY (event_ids) THEN 'Yes'
                 ELSE 'No'
             END
-        ELSE e.Calendared
-    END
-    FROM temp_event_ids te
-    WHERE e.Event_ID = te.event_id;
+        ELSE Calendared
+    END;
 END;
 $$;
