@@ -1,17 +1,20 @@
 WITH formatted_event_ids AS (
-    SELECT 'EID-' || LPAD(unnest(string_to_array('11521,2521,5214,521', ',')), 8, '0') AS event_id
+    SELECT unnest(string_to_array('11521,2521,5214,521', ',')) AS raw_event_id,
+           'EID-' || LPAD(unnest(string_to_array('11521,2521,5214,521', ',')), 8, '0') AS formatted_event_id
 ),
-update_logic AS (
+simulation AS (
     SELECT 
         e.*,
+        f.formatted_event_id,
         CASE
             WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
                 CASE
-                    WHEN e.Event_ID = ANY (SELECT event_id FROM formatted_event_ids) THEN 'Yes'
+                    WHEN f.formatted_event_id IS NOT NULL THEN 'Yes'
                     ELSE 'No'
                 END
             ELSE e.Calendared
         END AS proposed_est_calendared
     FROM public.exams e
+    LEFT JOIN formatted_event_ids f ON e.Event_ID = f.formatted_event_id
 )
-SELECT * FROM update_logic;
+SELECT * FROM simulation;
