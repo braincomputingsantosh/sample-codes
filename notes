@@ -1,6 +1,9 @@
-CREATE OR REPLACE PROCEDURE update_est_calendared(event_id_list TEXT)
+CREATE OR REPLACE FUNCTION update_est_calendared(event_id_list TEXT)
+RETURNS INTEGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+    affected_rows INTEGER;
 BEGIN
     -- Create a temporary table to hold formatted event_ids
     CREATE TEMP TABLE IF NOT EXISTS temp_event_ids (event_id VARCHAR PRIMARY KEY) ON COMMIT DROP;
@@ -13,16 +16,23 @@ BEGIN
     SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
     
     -- Update logic on public.exams using a JOIN with the temporary table
-    UPDATE public.exams e
-    SET est_calendared = CASE
-        WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
-            CASE
-                WHEN te.event_id IS NOT NULL THEN 'Yes'
-                ELSE 'No'
-            END
-        ELSE e.Calendared
-    END
-    FROM temp_event_ids te
-    WHERE e.Event_ID = te.event_id;
+    WITH upd AS (
+        UPDATE public.exams e
+        SET est_calendared = CASE
+            WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+                CASE
+                    WHEN te.event_id IS NOT NULL THEN 'Yes'
+                    ELSE 'No'
+                END
+            ELSE e.Calendared
+        END
+        FROM temp_event_ids te
+        WHERE e.Event_ID = te.event_id
+        RETURNING e.*
+    )
+    SELECT COUNT(*) INTO affected_rows FROM upd;
+    
+    -- Return the number of affected rows
+    RETURN affected_rows;
 END;
 $$;
