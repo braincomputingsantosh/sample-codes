@@ -1,35 +1,18 @@
-DO $$
-DECLARE
-    event_id_list TEXT := '11521,2521,5214,521';
-    affected_rows INTEGER;
-BEGIN
-    -- Create a temporary table to hold formatted event_ids
-    CREATE TEMP TABLE IF NOT EXISTS temp_event_ids (event_id VARCHAR PRIMARY KEY) ON COMMIT DROP;
-    
-    -- Empty the temporary table in case it already exists
-    TRUNCATE temp_event_ids;
-    
-    -- Populate the temporary table with unique formatted event_ids from the input list
-    INSERT INTO temp_event_ids (event_id)
-    SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array(event_id_list, ',')), 8, '0');
-    
-    -- Simulate the update logic on public.exams using a JOIN with the temporary table
-    WITH simulated_update AS (
-        SELECT 
-            e.*,
-            CASE
-                WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
-                    CASE
-                        WHEN te.event_id IS NOT NULL THEN 'Yes'
-                        ELSE 'No'
-                    END
-                ELSE e.Calendared
-            END AS proposed_est_calendared
-        FROM public.exams e
-        LEFT JOIN temp_event_ids te ON e.Event_ID = te.event_id
-    )
-    SELECT * FROM simulated_update;
-
-    -- Cleanup: Optionally drop the temporary table to avoid clutter
-    DROP TABLE IF EXISTS temp_event_ids;
-END $$;
+-- Assuming temp_event_ids has been populated as per the logic in the function
+WITH formatted_event_ids AS (
+    SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array('11521,2521,5214,521', ',')), 8, '0') AS event_id
+),
+simulated_update AS (
+    SELECT 
+        e.Event_ID,
+        CASE
+            WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
+                CASE
+                    WHEN e.Event_ID IN (SELECT event_id FROM formatted_event_ids) THEN 'Yes'
+                    ELSE 'No'
+                END
+            ELSE e.Calendared
+        END AS proposed_est_calendared
+    FROM public.exams e
+)
+SELECT * FROM simulated_update;
