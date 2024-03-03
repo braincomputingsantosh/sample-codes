@@ -1,18 +1,52 @@
--- Assuming temp_event_ids has been populated as per the logic in the function
-WITH formatted_event_ids AS (
-    SELECT DISTINCT 'EID-' || LPAD(unnest(string_to_array('11521,2521,5214,521', ',')), 8, '0') AS event_id
-),
-simulated_update AS (
-    SELECT 
-        e.Event_ID,
-        CASE
-            WHEN e.Calendared IS NULL OR e.Calendared = '' THEN
-                CASE
-                    WHEN e.Event_ID IN (SELECT event_id FROM formatted_event_ids) THEN 'Yes'
-                    ELSE 'No'
-                END
-            ELSE e.Calendared
-        END AS proposed_est_calendared
-    FROM public.exams e
+import sqlite3
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+# Configuration for SQLite
+sqlite_db_path = 'path/to/your/sqlite.db'
+sqlite_table = 'source_table'
+
+# Configuration for PostgreSQL
+pg_db_name = 'your_postgres_db'
+pg_user = 'your_postgres_user'
+pg_password = 'your_postgres_password'
+pg_host = 'localhost'  # or your PostgreSQL server address
+pg_port = '5432'  # default PostgreSQL port
+pg_table = 'destination_table'
+
+# Connect to SQLite
+conn_sqlite = sqlite3.connect(sqlite_db_path)
+cursor_sqlite = conn_sqlite.cursor()
+
+# Fetch data from SQLite
+cursor_sqlite.execute(f"SELECT * FROM {sqlite_table}")
+rows = cursor_sqlite.fetchall()
+
+# Define your PostgreSQL connection
+conn_pg = psycopg2.connect(
+    dbname=pg_db_name,
+    user=pg_user,
+    password=pg_password,
+    host=pg_host,
+    port=pg_port
 )
-SELECT * FROM simulated_update;
+conn_pg.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+cursor_pg = conn_pg.cursor()
+
+# Assuming the structures of source_table and destination_table are compatible
+# Prepare INSERT statement for PostgreSQL
+# You need to adjust the placeholders based on the number of columns in your table
+placeholders = ','.join(['%s'] * len(rows[0]))  # Adjust based on the number of columns
+insert_query = f"INSERT INTO {pg_table} VALUES ({placeholders})"
+
+# Insert data into PostgreSQL
+for row in rows:
+    cursor_pg.execute(insert_query, row)
+
+# Close connections
+cursor_sqlite.close()
+conn_sqlite.close()
+cursor_pg.close()
+conn_pg.close()
+
+print("Data transferred successfully.")
