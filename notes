@@ -1,21 +1,33 @@
-Title: Processing and Ingestion of SF1 Geo Data into Postgres CITUS Database
+import pandas as pd
+import re
 
-Description:
+# Adjust this to the path of your CSV file
+file_path = 'path_to_your_file.csv'
 
-Data Extraction: Utilized Python to automate the extraction of SF1 geo data from the provided source files. Ensured data integrity and completeness during the extraction process.
+# Load the CSV file
+df = pd.read_csv(file_path)
 
-Data Cleaning: Applied Python scripts for cleaning the extracted data, including removing duplicates, correcting inconsistencies, and handling missing values. This step ensured the quality and reliability of our data before ingestion.
+# Inspect the first few rows of the action_origin column
+print("First few rows of 'action_origin':")
+print(df['action_origin'].head())
 
-Data Transformation: Employed Python to transform the cleaned data into a format suitable for our Postgres CITUS database schema. This involved restructuring the data, converting data types where necessary, and creating a cohesive structure that aligns with our database's requirements.
+# Check for HTML tags in the action_origin column
+# This pattern looks for strings that start with '<' and end with '>', indicative of HTML
+pattern = re.compile(r'<[^>]+>')
 
-Schema Design: Designed an optimized schema in the Postgres CITUS database to accommodate the SF1 geo data efficiently. This included creating tables with appropriate data types, indexes, and distribution keys to leverage CITUS's horizontal scaling capabilities.
+# Create a column that flags rows with HTML in action_origin
+df['has_html_action_origin'] = df['action_origin'].apply(lambda x: bool(pattern.search(str(x))))
 
-Data Ingestion: Developed and executed Python scripts to batch-load the transformed data into the Postgres CITUS database. Implemented error handling to manage any issues during the ingestion process, ensuring a smooth data transfer.
+# Check if there's any row with HTML
+if df['has_html_action_origin'].any():
+    print("\nHTML tags found in 'action_origin' column. Here are examples:")
+    print(df[df['has_html_action_origin']]['action_origin'].head())
+else:
+    print("\nNo HTML tags found in 'action_origin' column.")
 
-Verification and Testing: Conducted thorough testing to verify the accuracy and integrity of the ingested data. This included performing sample data queries, checking data distribution across nodes in CITUS, and validating the performance improvements on query executions.
-
-Documentation: Documented the entire process, including code snippets, schema designs, and observations on performance enhancements. This documentation serves as a reference for future data processing and ingestion tasks.
-
-Optimization and Scaling: Analyzed the system's performance and optimized the database configuration to better handle the scale of SF1 geo data. This involved adjusting the distribution strategy in CITUS to improve query performance and resource utilization.
-
-By following these steps, we successfully processed and ingested the SF1 geo data into our Postgres CITUS database, enhancing our data analytics capabilities and providing a scalable solution for managing large geographic datasets.
+# Optionally, check for HTML tags in other columns as well
+for column in df.columns:
+    df[f'has_html_{column}'] = df[column].apply(lambda x: bool(pattern.search(str(x))))
+    if df[f'has_html_{column}'].any():
+        print(f"\nHTML tags found in '{column}' column. Here are examples:")
+        print(df[df[f'has_html_{column}']]['action_origin'].head())
