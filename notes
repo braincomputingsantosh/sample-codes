@@ -1,33 +1,13 @@
-import pandas as pd
-import re
+I hope this message finds you well. I wanted to bring to your attention an important observation regarding the handling of our CSV data exports, particularly those involving columns with HTML content.
 
-# Adjust this to the path of your CSV file
-file_path = 'path_to_your_file.csv'
+Upon review, it has been noted that the action_origin column in our data exports does not contain any HTML data. However, other columns do include HTML content. When these CSV files are opened in Excel, there's a noticeable issue where the HTML data seems to overlap across multiple columns. This issue can cause significant confusion and potentially lead to data misinterpretation.
 
-# Load the CSV file
-df = pd.read_csv(file_path)
+This behavior, although unintended, is a result of how Excel processes and displays HTML content within CSV files. Unfortunately, this is by design in Excel and affects the way data is visualized, leading to potential inaccuracies in our data handling processes.
 
-# Inspect the first few rows of the action_origin column
-print("First few rows of 'action_origin':")
-print(df['action_origin'].head())
+To mitigate this issue and ensure accurate data review and analysis, I recommend using Sublime Text to open and work with these CSV files instead of Excel. Sublime Text handles the separation of columns and the display of HTML content more efficiently, without the overlapping issue observed in Excel. This change will allow us to maintain the integrity of our data and ensure that our analyses are based on accurate and unaltered information.
 
-# Check for HTML tags in the action_origin column
-# This pattern looks for strings that start with '<' and end with '>', indicative of HTML
-pattern = re.compile(r'<[^>]+>')
+For those unfamiliar with Sublime Text, it is a sophisticated text editor for code, markup, and prose. It offers a user-friendly interface and powerful features that make it an excellent tool for handling our data files.
 
-# Create a column that flags rows with HTML in action_origin
-df['has_html_action_origin'] = df['action_origin'].apply(lambda x: bool(pattern.search(str(x))))
+I understand this adjustment may require a slight change in our current workflows, but I believe it will significantly enhance our data handling capabilities. I am here to assist with any questions or support you may need in making this transition. Additionally, if you require guidance on using Sublime Text, please do not hesitate to reach out.
 
-# Check if there's any row with HTML
-if df['has_html_action_origin'].any():
-    print("\nHTML tags found in 'action_origin' column. Here are examples:")
-    print(df[df['has_html_action_origin']]['action_origin'].head())
-else:
-    print("\nNo HTML tags found in 'action_origin' column.")
-
-# Optionally, check for HTML tags in other columns as well
-for column in df.columns:
-    df[f'has_html_{column}'] = df[column].apply(lambda x: bool(pattern.search(str(x))))
-    if df[f'has_html_{column}'].any():
-        print(f"\nHTML tags found in '{column}' column. Here are examples:")
-        print(df[df[f'has_html_{column}']]['action_origin'].head())
+Thank you for your attention to this matter and for your continued commitment to maintaining the highest standards of data integrity within our team.
