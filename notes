@@ -1,13 +1,34 @@
-I hope this message finds you well. I wanted to bring to your attention an important observation regarding the handling of our CSV data exports, particularly those involving columns with HTML content.
-
-Upon review, it has been noted that the action_origin column in our data exports does not contain any HTML data. However, other columns do include HTML content. When these CSV files are opened in Excel, there's a noticeable issue where the HTML data seems to overlap across multiple columns. This issue can cause significant confusion and potentially lead to data misinterpretation.
-
-This behavior, although unintended, is a result of how Excel processes and displays HTML content within CSV files. Unfortunately, this is by design in Excel and affects the way data is visualized, leading to potential inaccuracies in our data handling processes.
-
-To mitigate this issue and ensure accurate data review and analysis, I recommend using Sublime Text to open and work with these CSV files instead of Excel. Sublime Text handles the separation of columns and the display of HTML content more efficiently, without the overlapping issue observed in Excel. This change will allow us to maintain the integrity of our data and ensure that our analyses are based on accurate and unaltered information.
-
-For those unfamiliar with Sublime Text, it is a sophisticated text editor for code, markup, and prose. It offers a user-friendly interface and powerful features that make it an excellent tool for handling our data files.
-
-I understand this adjustment may require a slight change in our current workflows, but I believe it will significantly enhance our data handling capabilities. I am here to assist with any questions or support you may need in making this transition. Additionally, if you require guidance on using Sublime Text, please do not hesitate to reach out.
-
-Thank you for your attention to this matter and for your continued commitment to maintaining the highest standards of data integrity within our team.
+Step 1: Generate a Databricks Personal Access Token (PAT)
+Log into Databricks: Navigate to your Databricks workspace.
+Access the User Settings: Click on your user profile at the bottom-left corner and select "User Settings".
+Generate a PAT: Go to the "Access Tokens" tab and click on the "Generate New Token" button.
+Token Description: Enter a meaningful name for the token to help you remember its purpose.
+Lifetime: Set an expiration for the token that aligns with your security policies (e.g., 90 days).
+Generate: Click on the "Generate" button to create the token.
+Save the Token: Copy and securely store the token. You won't be able to see it again.
+Step 2: Generate a GitHub Personal Access Token
+Navigate to GitHub Settings: Log into GitHub, click on your profile icon in the top right, and go to "Settings".
+Developer Settings: On the settings page, scroll down and select "Developer settings".
+Personal Access Tokens: Click on "Personal access tokens" and then the "Generate new token" button.
+Note: Provide a name that helps you identify the token's purpose.
+Select Scopes: Choose the permissions your token needs. For integration with Databricks, select at least repo to access your repositories.
+Generate Token: Click the "Generate token" button at the bottom.
+Save Your Token: Copy the token and keep it secure. You won't be able to see it again once you navigate away from the page.
+Step 3: Integrate GitHub with Databricks Using PAT
+Open Databricks Repos: In your Databricks workspace, navigate to the "Repos" section on the sidebar.
+Add a Repo: Click on the "Add Repo" button.
+Repository URL: Enter the URL of the GitHub repository where you want to store your Databricks assets.
+Authentication: When prompted for authentication, select the option to use a token and input the GitHub Personal Access Token you generated earlier.
+Clone the Repository: Proceed to clone the repository. Your Databricks workspace will now be linked with the specified GitHub repository.
+Step 4: Work with Databricks Notebooks and Repositories
+Creating/Editing Notebooks: Create or edit notebooks in the Databricks workspace within the cloned repository.
+Committing Changes: Use the built-in Git support in Databricks to commit changes. Right-click on the notebook in the Repos browser and select "Git Commit".
+Commit Message: Write a meaningful commit message.
+Select Files: Choose the files you want to commit.
+Commit and Push: Commit your changes to the local repo and then push them to GitHub.
+Step 5: Collaborate and Version Control
+Utilize GitHub features such as pull requests and issues to collaborate with your team.
+Regularly pull changes from GitHub to ensure your Databricks workspace is up to date.
+Security and Best Practices
+Regularly rotate your Personal Access Tokens in both Databricks and GitHub as per your security policies.
+Use branches in GitHub for development work to avoid conflicts and ensure that the main branch remains stable.
