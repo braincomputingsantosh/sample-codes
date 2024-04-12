@@ -1,7 +1,42 @@
-Identifying Vulnerable Populations:  SVI helps pinpoint communities more susceptible to predatory lending practices, debt collection issues, or difficulty managing finances due to social factors like limited transportation or language barriers.
+import pandas as pd
+from pandas.tseries.offsets import DateOffset
 
-Targeted Outreach and Education:  By understanding areas of high social vulnerability and low financial literacy, the CFPB can tailor consumer education initiatives, reaching those most at risk.
+# Define file paths
+int_dta_path = "/path/intermediate/Origs.dta"
+fin_dta_path = "/path/data/Origs.dta"
 
-Risk Assessment and Mitigation:  Integrating SVI data into your existing risk assessment models can help identify potential hotspots for financial exploitation, allowing for proactive measures to protect consumers.
+# Define the sectionA variable. It's not clear how it's used from your snippet,
+# but assuming it dictates whether to run the block of code
+sectionA = 1
 
-Promoting Financial Inclusion:  By understanding social vulnerabilities that hinder financial well-being, the CFPB can advocate for policies promoting access to safe and affordable financial products for all.
+if sectionA:
+    # Load the dataset
+    df = pd.read_stata(int_dta_path)
+    
+    # Reordering columns (assuming 'openym', 'vols', 'origs', 'archiveym' exist in your dataset)
+    df = df[['openym', 'vols', 'origs', 'archiveym']]
+    
+    # Generating a new column 'relative' as the difference between 'archiveym' and 'openym'
+    # This assumes 'archiveym' and 'openym' can be subtracted directly to get a numeric difference
+    # If 'archiveym' and 'openym' are date formats, you might need additional processing
+    df['relative'] = df['archiveym'] - df['openym']
+    
+    # Keeping rows where 'relative' is either 6 or 3
+    df = df[df['relative'].isin([6, 3])]
+    
+    # Dropping rows based on the specified conditions
+    # This assumes 'archiveym' and 'openym' can be directly compared to date values or periods
+    # and might need adjustments if they are in a different format
+    df = df[~((df['relative'] != 6) & (df['archiveym'] < pd.Timestamp(year=2022, month=12, day=1))) |
+            ((df['relative'] != 3) & (df['archiveym'] == pd.Timestamp(year=2023, month=3, day=1)))]
+    
+    # Labeling columns (in pandas, this could mean renaming for clarity)
+    df.rename(columns={'vols': 'Billions', 'origs': 'Millions', 
+                       'relative': 'Archive date', 'archiveym': 'Archive year',
+                       'openym': 'Open Date'}, inplace=True)
+    
+    # Assuming 'compress' means optimizing data types
+    df = df.convert_dtypes()
+    
+    # Saving the modified dataset
+    df.to_stata(fin_dta_path, write_index=False)
