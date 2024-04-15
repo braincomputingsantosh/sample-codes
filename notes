@@ -1,42 +1,12 @@
-import pandas as pd
-from pandas.tseries.offsets import DateOffset
+rules for calculating the Government Performance and Results Act (GPRA) due date based on the statuses of two elements: "Exam analysis Finalized" (EAF) and "Draft to Prudential" (DtP). Here are the rules simplified:
 
-# Define file paths
-int_dta_path = "/path/intermediate/Origs.dta"
-fin_dta_path = "/path/data/Origs.dta"
+If Exam Analysis Finalized is not blank and Draft to Prudential is blank:
 
-# Define the sectionA variable. It's not clear how it's used from your snippet,
-# but assuming it dictates whether to run the block of code
-sectionA = 1
+In this case, the GPRA due date should be calculated as 45 business days starting from the date noted in the EAF field. This rule applies when an exam analysis has been finalized but the draft has not yet been submitted to Prudential.
+If both Exam Analysis Finalized and Draft to Prudential are not blank:
 
-if sectionA:
-    # Load the dataset
-    df = pd.read_stata(int_dta_path)
-    
-    # Reordering columns (assuming 'openym', 'vols', 'origs', 'archiveym' exist in your dataset)
-    df = df[['openym', 'vols', 'origs', 'archiveym']]
-    
-    # Generating a new column 'relative' as the difference between 'archiveym' and 'openym'
-    # This assumes 'archiveym' and 'openym' can be subtracted directly to get a numeric difference
-    # If 'archiveym' and 'openym' are date formats, you might need additional processing
-    df['relative'] = df['archiveym'] - df['openym']
-    
-    # Keeping rows where 'relative' is either 6 or 3
-    df = df[df['relative'].isin([6, 3])]
-    
-    # Dropping rows based on the specified conditions
-    # This assumes 'archiveym' and 'openym' can be directly compared to date values or periods
-    # and might need adjustments if they are in a different format
-    df = df[~((df['relative'] != 6) & (df['archiveym'] < pd.Timestamp(year=2022, month=12, day=1))) |
-            ((df['relative'] != 3) & (df['archiveym'] == pd.Timestamp(year=2023, month=3, day=1)))]
-    
-    # Labeling columns (in pandas, this could mean renaming for clarity)
-    df.rename(columns={'vols': 'Billions', 'origs': 'Millions', 
-                       'relative': 'Archive date', 'archiveym': 'Archive year',
-                       'openym': 'Open Date'}, inplace=True)
-    
-    # Assuming 'compress' means optimizing data types
-    df = df.convert_dtypes()
-    
-    # Saving the modified dataset
-    df.to_stata(fin_dta_path, write_index=False)
+Even if the draft has been submitted to Prudential, the calculation of the GPRA due date remains the same as in the first scenario. It will be 45 business days from the date in the EAF field. This indicates that the submission of the draft does not affect the timing of the GPRA due date calculation; it still bases off the EAF date.
+If both Exam Analysis Finalized and Draft to Prudential are blank:
+
+The GPRA due date should also be left blank. This implies that without an initiation date from the EAF, the due date cannot be determined.
+In essence, the calculation for the GPRA due date primarily depends on the "Exam Analysis Finalized" date. It does not matter whether the "Draft to Prudential" is submitted or not for determining the due date, as long as the EAF date is available. If neither field is filled, no due date is calculated.
