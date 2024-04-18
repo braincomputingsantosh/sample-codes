@@ -1,12 +1,62 @@
-rules for calculating the Government Performance and Results Act (GPRA) due date based on the statuses of two elements: "Exam analysis Finalized" (EAF) and "Draft to Prudential" (DtP). Here are the rules simplified:
+To load Census Summary File 1 (SFI) data into a PostgreSQL Citus database using Python scripts, follow this detailed step-by-step guide. Note that Citus is an extension of PostgreSQL that enables scaling out PostgreSQL across multiple nodes and is often used for managing large-scale datasets.
 
-If Exam Analysis Finalized is not blank and Draft to Prudential is blank:
-
-In this case, the GPRA due date should be calculated as 45 business days starting from the date noted in the EAF field. This rule applies when an exam analysis has been finalized but the draft has not yet been submitted to Prudential.
-If both Exam Analysis Finalized and Draft to Prudential are not blank:
-
-Even if the draft has been submitted to Prudential, the calculation of the GPRA due date remains the same as in the first scenario. It will be 45 business days from the date in the EAF field. This indicates that the submission of the draft does not affect the timing of the GPRA due date calculation; it still bases off the EAF date.
-If both Exam Analysis Finalized and Draft to Prudential are blank:
-
-The GPRA due date should also be left blank. This implies that without an initiation date from the EAF, the due date cannot be determined.
-In essence, the calculation for the GPRA due date primarily depends on the "Exam Analysis Finalized" date. It does not matter whether the "Draft to Prudential" is submitted or not for determining the due date, as long as the EAF date is available. If neither field is filled, no due date is calculated.
+Step-by-Step Process
+Step 1: Environment Setup
+Install PostgreSQL and Citus: Ensure that PostgreSQL is installed on your system. Then, install Citus on your PostgreSQL server. Citus can be installed by running the command:
+bash
+Copy code
+CREATE EXTENSION citus;
+on your PostgreSQL database.
+Install Python and Libraries: Install Python if not already installed. You will also need psycopg2 for database connectivity and pandas for data manipulation. Install them using pip:
+bash
+Copy code
+pip install psycopg2-binary pandas
+Step 2: Download Census SFI Data
+Access the Census Bureau Website: Go to the United States Census Bureau website to find the Summary File 1 datasets. Here is the link to access the data: U.S. Census Bureau.
+Download the Data: Choose the specific datasets you need. The data files are usually large and are provided in various formats. Download the CSV format if available for easier processing with Python.
+Step 3: Data Preparation
+Read the Data with Python: Use Python to read the downloaded CSV files. You can use pandas to handle these operations due to its efficiency with large datasets:
+python
+Copy code
+import pandas as pd
+data = pd.read_csv('path_to_your_downloaded_file.csv')
+Clean and Prepare the Data: Depending on the requirements, filter or transform the data. This might involve renaming columns, converting data types, or dealing with missing values.
+Step 4: Database Schema Setup
+Connect to Your Citus Cluster: Using psycopg2, establish a connection to your Citus database:
+python
+Copy code
+import psycopg2
+conn = psycopg2.connect("dbname=test user=postgres host=localhost password=yourpassword")
+cur = conn.cursor()
+Create Tables: Define the schema for your tables based on the Census data structure. For example:
+sql
+Copy code
+cur.execute("""
+    CREATE TABLE census_data (
+        id SERIAL PRIMARY KEY,
+        column1 VARCHAR,
+        column2 INT,
+        ...
+    );
+""")
+conn.commit()
+Step 5: Data Loading
+Insert Data into the Database: Utilize pandas DataFrame functionality to load data into the database efficiently. This can be achieved by using the to_sql method which can leverage the database connection established by psycopg2:
+python
+Copy code
+from sqlalchemy import create_engine
+engine = create_engine('postgresql+psycopg2://postgres:yourpassword@localhost/test')
+data.to_sql('census_data', con=engine, if_exists='append', index=False)
+Step 6: Scaling with Citus
+Distribute Your Data: Once your data is loaded, you can distribute your tables across multiple nodes in Citus to leverage its scaling capabilities:
+sql
+Copy code
+SELECT create_distributed_table('census_data', 'id');
+Step 7: Query and Analyze
+Perform Queries: Now that your data is distributed, you can perform SQL queries to analyze the data across multiple nodes. Citus enables efficient querying over large datasets by parallelizing the queries across the cluster nodes.
+Additional Resources
+Citus Documentation
+PostgreSQL Official Documentation
+Python psycopg2 Documentation
+Pandas Documentation
+This guide provides a basic workflow for loading and querying large-scale census data using Python and Citus. Adjust the steps as needed based on your specific data and schema requirements.
