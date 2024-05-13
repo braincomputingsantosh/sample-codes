@@ -1,30 +1,61 @@
-Yes, you can load SQL data into a NumPy array to leverage the computational speed of NumPy for data processing tasks. NumPy, being optimized for high-performance array operations, can significantly speed up operations on numerical data compared to traditional Python lists or iterating through database query results directly.
+Here are a few ways to identify locks, particularly those affecting tables:
 
-Here’s a general workflow on how to load SQL data into a NumPy array:
+1. Using the pg_locks View
+The pg_locks view contains all the locks currently held by active processes in the PostgreSQL instance. You can join this view with other catalog tables like pg_class and pg_stat_activity to get more readable and comprehensive information about the locks:
 
-Step 1: Retrieve Data from SQL Database
-You first need to execute a SQL query using a Python database library like sqlite3, psycopg2 (for PostgreSQL), pymysql (for MySQL), or any other library that suits the SQL database you are using.
+sql
+Copy code
+SELECT
+    a.datname as database_name,
+    c.relname as table_name,
+    l.transactionid,
+    l.mode,
+    l.granted,
+    a.query as current_query,
+    a.pid,
+    age(now(), a.query_start) as query_age,
+    a.usename as username
+FROM pg_locks l
+JOIN pg_stat_activity a ON l.pid = a.pid
+LEFT JOIN pg_class c ON c.oid = l.relation
+WHERE c.relkind = 'r' -- 'r' means ordinary table
+This query provides details about which tables are locked, the type of locks held (mode), whether the lock is active (granted), and what query is holding the lock, along with the age of the query and the user holding the lock.
 
-Step 2: Convert SQL Data to NumPy Array
-After fetching the data from the database, you can convert the retrieved data into a NumPy array. This typically involves extracting the data into a format that can be converted to a NumPy array, such as a list or a tuple of tuples.
+2. Checking for Locks with Specific Modes
+You might be specifically interested in stronger lock types that generally affect concurrency more significantly, like ExclusiveLocks or AccessExclusiveLocks. Here's how you could filter for those:
 
-Here’s a step-by-step guide using Python:
+sql
+Copy code
+SELECT
+    a.datname as database_name,
+    c.relname as table_name,
+    l.mode,
+    a.query as blocking_query,
+    a.pid as blocking_process_id,
+    age(now(), a.query_start) as query_age,
+    a.usename as blocking_user
+FROM pg_locks l
+JOIN pg_stat_activity a ON l.pid = a.pid
+LEFT JOIN pg_class c ON c.oid = l.relation
+WHERE l.mode = 'AccessExclusiveLock' AND l.granted
+3. Identifying Blocked Queries
+Sometimes, the interest is not only in who holds the lock but also in who is waiting for it. Here’s how you can find out which queries are blocked:
 
-np_array = np.array(data)
-
-
-Advantages of Using NumPy with SQL Data
-Performance: NumPy is highly optimized for numerical computations, especially vectorized operations, making it much faster for operations on large data sets than typical Python code.
-Efficiency: NumPy uses less memory to store data, which makes it more efficient when handling large data sets.
-Functionality: NumPy provides a wide range of mathematical functions that facilitate complex numerical calculations.
-Considerations
-Data Type Homogeneity: NumPy arrays are designed to be homogeneous. All elements of the array must be of the same data type. If your SQL data includes multiple data types (e.g., integers, strings), you might need to handle each column separately or choose a unified dtype (like object).
-Memory Usage: While NumPy is memory efficient for large arrays, loading a very large dataset entirely into memory as a NumPy array could lead to high memory usage. In such cases, consider processing the data in chunks or using libraries designed for out-of-core computations on large datasets, such as Dask or Vaex.
-
-
-Loading SQL data into NumPy can be a powerful approach for speeding up data analysis and processing, especially when dealing with large volumes of numerical data.
-
-
-
-
-
+sql
+Copy code
+SELECT
+    a.pid as waiting_pid,
+    a.usename as waiting_user,
+    a.query as waiting_query,
+    age(now(), a.query_start) as waiting_duration,
+    b.pid as blocking_pid,
+    b.query as blocking_query,
+    b.query_start as blocking_start_time,
+    l.mode as lock_mode
+FROM pg_locks l
+JOIN pg_stat_activity a ON l.pid = a.pid
+LEFT JOIN pg_locks bl ON bl.transactionid = l.transactionid AND bl.pid != l.pid
+LEFT JOIN pg_stat_activity b ON bl.pid = b.pid
+WHERE l.granted = false
+AND a.query NOT LIKE '%pg_locks%'
+This query shows the waiting queries along with the PIDs and queries of the blocking transactions. It helps in understanding what specific transactions are causing others to wait.
