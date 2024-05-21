@@ -1,19 +1,9 @@
-Yes, you can use Python to profile a Citus database and generate a report. Here is a high-level approach to achieve this:
-
-Install Necessary Packages:
-Ensure you have the required packages installed. You will need psycopg2 for connecting to the PostgreSQL (Citus) database, pandas for data manipulation, and matplotlib for plotting.
-
-bash
-Copy code
-pip install psycopg2 pandas matplotlib
-Connect to the Database:
-Establish a connection to your Citus database using psycopg2.
-
-python
-Copy code
 import psycopg2
 import pandas as pd
+import matplotlib.pyplot as plt
+import os
 
+# Connect to PostgreSQL
 conn = psycopg2.connect(
     dbname="your_database",
     user="your_user",
@@ -21,67 +11,75 @@ conn = psycopg2.connect(
     host="your_host",
     port="your_port"
 )
-Collect Data:
-Execute queries to collect the necessary profiling data.
 
-python
-Copy code
-def execute_query(query):
+# Function to execute a query and return the results as a DataFrame
+def execute_query(query, columns):
     with conn.cursor() as cursor:
         cursor.execute(query)
-        return cursor.fetchall()
+        results = cursor.fetchall()
+        return pd.DataFrame(results, columns=columns)
 
-db_stats = execute_query("SELECT * FROM pg_stat_database WHERE datname = 'your_database';")
-query_stats = execute_query("SELECT * FROM pg_stat_statements;")
-table_stats = execute_query("SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables;")
-lock_stats = execute_query("SELECT * FROM pg_locks;")
-node_stats = execute_query("SELECT nodeid, nodename, nodeport, noderole, isactive FROM pg_dist_node;")
-shard_stats = execute_query("SELECT shardid, shardstorage, minvalue, maxvalue, num_nodes FROM pg_dist_shard;")
-Analyze Data:
-Use Pandas to convert the data into DataFrames for easier manipulation and analysis.
+# Collect data from various statistics views
+db_stats_df = execute_query("SELECT * FROM pg_stat_database WHERE datname = 'your_database';", ['datid', 'datname', 'numbackends', 'xact_commit', 'xact_rollback', 'blks_read', 'blks_hit', 'tup_returned', 'tup_fetched', 'tup_inserted', 'tup_updated', 'tup_deleted', 'conflicts', 'temp_files', 'temp_bytes', 'deadlocks', 'blk_read_time', 'blk_write_time', 'stats_reset'])
+table_stats_df = execute_query("SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables;", ['relname', 'seq_scan', 'idx_scan', 'n_tup_ins', 'n_tup_upd', 'n_tup_del'])
+lock_stats_df = execute_query("SELECT * FROM pg_locks;", ['locktype', 'database', 'relation', 'page', 'tuple', 'virtualxid', 'transactionid', 'classid', 'objid', 'objsubid', 'virtualtransaction', 'pid', 'mode', 'granted', 'fastpath'])
+node_stats_df = execute_query("SELECT nodeid, nodename, nodeport, noderole, isactive FROM pg_dist_node;", ['nodeid', 'nodename', 'nodeport', 'noderole', 'isactive'])
+shard_stats_df = execute_query("SELECT shardid, shardstorage, min_value, max_value, num_nodes FROM pg_dist_shard;", ['shardid', 'shardstorage', 'min_value', 'max_value', 'num_nodes'])
 
-python
-Copy code
-db_stats_df = pd.DataFrame(db_stats, columns=['datid', 'datname', 'numbackends', 'xact_commit', 'xact_rollback', 'blks_read', 'blks_hit', 'tup_returned', 'tup_fetched', 'tup_inserted', 'tup_updated', 'tup_deleted', 'conflicts', 'temp_files', 'temp_bytes', 'deadlocks', 'blk_read_time', 'blk_write_time', 'stats_reset'])
-query_stats_df = pd.DataFrame(query_stats, columns=['userid', 'dbid', 'queryid', 'query', 'calls', 'total_time', 'rows', 'shared_blks_hit', 'shared_blks_read', 'shared_blks_dirtied', 'shared_blks_written', 'local_blks_hit', 'local_blks_read', 'local_blks_dirtied', 'local_blks_written', 'temp_blks_read', 'temp_blks_written', 'blk_read_time', 'blk_write_time'])
-table_stats_df = pd.DataFrame(table_stats, columns=['relname', 'seq_scan', 'idx_scan', 'n_tup_ins', 'n_tup_upd', 'n_tup_del'])
-lock_stats_df = pd.DataFrame(lock_stats, columns=['locktype', 'database', 'relation', 'page', 'tuple', 'virtualxid', 'transactionid', 'classid', 'objid', 'objsubid', 'virtualtransaction', 'pid', 'mode', 'granted', 'fastpath'])
-node_stats_df = pd.DataFrame(node_stats, columns=['nodeid', 'nodename', 'nodeport', 'noderole', 'isactive'])
-shard_stats_df = pd.DataFrame(shard_stats, columns=['shardid', 'shardstorage', 'minvalue', 'maxvalue', 'num_nodes'])
-Generate Visualizations:
-Use Matplotlib to create visualizations for the report.
-
-python
-Copy code
-import matplotlib.pyplot as plt
-
-# Example: Plotting query execution times
+# Generate visualizations for collected data
+# Example: Visualizing table scan statistics
 plt.figure(figsize=(10, 6))
-plt.bar(query_stats_df['queryid'], query_stats_df['total_time'])
-plt.xlabel('Query ID')
-plt.ylabel('Total Time (ms)')
-plt.title('Query Execution Times')
-plt.show()
-Generate the Report:
-Compile the data and visualizations into a report using a library like reportlab or by generating an HTML report.
+plt.bar(table_stats_df['relname'], table_stats_df['seq_scan'], label='Sequential Scans')
+plt.bar(table_stats_df['relname'], table_stats_df['idx_scan'], bottom=table_stats_df['seq_scan'], label='Index Scans')
+plt.xlabel('Table Name')
+plt.ylabel('Scan Count')
+plt.title('Sequential vs. Index Scans per Table')
+plt.xticks(rotation=90)
+plt.legend()
+plt.tight_layout()
+plt.savefig('table_scan_statistics.png')
+plt.close()
 
-python
-Copy code
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
+# Generate the HTML report
+def generate_html_report():
+    report_content = f"""
+    <html>
+    <head>
+        <title>Database Profile Report</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            table {{ border-collapse: collapse; width: 100%; }}
+            th, td {{ border: 1px solid #ddd; padding: 8px; }}
+            th {{ background-color: #f2f2f2; }}
+        </style>
+    </head>
+    <body>
+        <h1>Database Profile Report</h1>
+        
+        <h2>Database Statistics</h2>
+        {db_stats_df.to_html(index=False)}
+        
+        <h2>Table Scan Statistics</h2>
+        <img src="table_scan_statistics.png" alt="Table Scan Statistics">
+        
+        <h2>Table Statistics</h2>
+        {table_stats_df.to_html(index=False)}
+        
+        <h2>Lock Statistics</h2>
+        {lock_stats_df.to_html(index=False)}
+        
+        <h2>Node Statistics</h2>
+        {node_stats_df.to_html(index=False)}
+        
+        <h2>Shard Statistics</h2>
+        {shard_stats_df.to_html(index=False)}
+    </body>
+    </html>
+    """
+    with open("database_profile_report.html", "w") as file:
+        file.write(report_content)
 
-def generate_report():
-    c = canvas.Canvas("database_profile_report.pdf", pagesize=letter)
-    width, height = letter
-    c.drawString(30, height - 30, "Database Profile Report")
-    
-    # Add a table for database statistics
-    c.drawString(30, height - 60, "Database Statistics:")
-    db_stats_table = db_stats_df.to_string(index=False)
-    c.drawString(30, height - 80, db_stats_table)
-    
-    # Save the PDF
-    c.save()
+generate_html_report()
 
-generate_report()
-This is a basic outline. Depending on your needs, you may need to expand on the data collection, analysis, and report generation steps. For example, you can add more visualizations, perform more detailed analysis, and enhance the report formatting.
+# Open the HTML report in the default web browser
+os.system("open database_profile_report.html" if os.name == "posix" else "start database_profile_report.html")
