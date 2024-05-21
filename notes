@@ -1,61 +1,87 @@
-Here are a few ways to identify locks, particularly those affecting tables:
+Yes, you can use Python to profile a Citus database and generate a report. Here is a high-level approach to achieve this:
 
-1. Using the pg_locks View
-The pg_locks view contains all the locks currently held by active processes in the PostgreSQL instance. You can join this view with other catalog tables like pg_class and pg_stat_activity to get more readable and comprehensive information about the locks:
+Install Necessary Packages:
+Ensure you have the required packages installed. You will need psycopg2 for connecting to the PostgreSQL (Citus) database, pandas for data manipulation, and matplotlib for plotting.
 
-sql
+bash
 Copy code
-SELECT
-    a.datname as database_name,
-    c.relname as table_name,
-    l.transactionid,
-    l.mode,
-    l.granted,
-    a.query as current_query,
-    a.pid,
-    age(now(), a.query_start) as query_age,
-    a.usename as username
-FROM pg_locks l
-JOIN pg_stat_activity a ON l.pid = a.pid
-LEFT JOIN pg_class c ON c.oid = l.relation
-WHERE c.relkind = 'r' -- 'r' means ordinary table
-This query provides details about which tables are locked, the type of locks held (mode), whether the lock is active (granted), and what query is holding the lock, along with the age of the query and the user holding the lock.
+pip install psycopg2 pandas matplotlib
+Connect to the Database:
+Establish a connection to your Citus database using psycopg2.
 
-2. Checking for Locks with Specific Modes
-You might be specifically interested in stronger lock types that generally affect concurrency more significantly, like ExclusiveLocks or AccessExclusiveLocks. Here's how you could filter for those:
-
-sql
+python
 Copy code
-SELECT
-    a.datname as database_name,
-    c.relname as table_name,
-    l.mode,
-    a.query as blocking_query,
-    a.pid as blocking_process_id,
-    age(now(), a.query_start) as query_age,
-    a.usename as blocking_user
-FROM pg_locks l
-JOIN pg_stat_activity a ON l.pid = a.pid
-LEFT JOIN pg_class c ON c.oid = l.relation
-WHERE l.mode = 'AccessExclusiveLock' AND l.granted
-3. Identifying Blocked Queries
-Sometimes, the interest is not only in who holds the lock but also in who is waiting for it. Here’s how you can find out which queries are blocked:
+import psycopg2
+import pandas as pd
 
-sql
+conn = psycopg2.connect(
+    dbname="your_database",
+    user="your_user",
+    password="your_password",
+    host="your_host",
+    port="your_port"
+)
+Collect Data:
+Execute queries to collect the necessary profiling data.
+
+python
 Copy code
-SELECT
-    a.pid as waiting_pid,
-    a.usename as waiting_user,
-    a.query as waiting_query,
-    age(now(), a.query_start) as waiting_duration,
-    b.pid as blocking_pid,
-    b.query as blocking_query,
-    b.query_start as blocking_start_time,
-    l.mode as lock_mode
-FROM pg_locks l
-JOIN pg_stat_activity a ON l.pid = a.pid
-LEFT JOIN pg_locks bl ON bl.transactionid = l.transactionid AND bl.pid != l.pid
-LEFT JOIN pg_stat_activity b ON bl.pid = b.pid
-WHERE l.granted = false
-AND a.query NOT LIKE '%pg_locks%'
-This query shows the waiting queries along with the PIDs and queries of the blocking transactions. It helps in understanding what specific transactions are causing others to wait.
+def execute_query(query):
+    with conn.cursor() as cursor:
+        cursor.execute(query)
+        return cursor.fetchall()
+
+db_stats = execute_query("SELECT * FROM pg_stat_database WHERE datname = 'your_database';")
+query_stats = execute_query("SELECT * FROM pg_stat_statements;")
+table_stats = execute_query("SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables;")
+lock_stats = execute_query("SELECT * FROM pg_locks;")
+node_stats = execute_query("SELECT nodeid, nodename, nodeport, noderole, isactive FROM pg_dist_node;")
+shard_stats = execute_query("SELECT shardid, shardstorage, minvalue, maxvalue, num_nodes FROM pg_dist_shard;")
+Analyze Data:
+Use Pandas to convert the data into DataFrames for easier manipulation and analysis.
+
+python
+Copy code
+db_stats_df = pd.DataFrame(db_stats, columns=['datid', 'datname', 'numbackends', 'xact_commit', 'xact_rollback', 'blks_read', 'blks_hit', 'tup_returned', 'tup_fetched', 'tup_inserted', 'tup_updated', 'tup_deleted', 'conflicts', 'temp_files', 'temp_bytes', 'deadlocks', 'blk_read_time', 'blk_write_time', 'stats_reset'])
+query_stats_df = pd.DataFrame(query_stats, columns=['userid', 'dbid', 'queryid', 'query', 'calls', 'total_time', 'rows', 'shared_blks_hit', 'shared_blks_read', 'shared_blks_dirtied', 'shared_blks_written', 'local_blks_hit', 'local_blks_read', 'local_blks_dirtied', 'local_blks_written', 'temp_blks_read', 'temp_blks_written', 'blk_read_time', 'blk_write_time'])
+table_stats_df = pd.DataFrame(table_stats, columns=['relname', 'seq_scan', 'idx_scan', 'n_tup_ins', 'n_tup_upd', 'n_tup_del'])
+lock_stats_df = pd.DataFrame(lock_stats, columns=['locktype', 'database', 'relation', 'page', 'tuple', 'virtualxid', 'transactionid', 'classid', 'objid', 'objsubid', 'virtualtransaction', 'pid', 'mode', 'granted', 'fastpath'])
+node_stats_df = pd.DataFrame(node_stats, columns=['nodeid', 'nodename', 'nodeport', 'noderole', 'isactive'])
+shard_stats_df = pd.DataFrame(shard_stats, columns=['shardid', 'shardstorage', 'minvalue', 'maxvalue', 'num_nodes'])
+Generate Visualizations:
+Use Matplotlib to create visualizations for the report.
+
+python
+Copy code
+import matplotlib.pyplot as plt
+
+# Example: Plotting query execution times
+plt.figure(figsize=(10, 6))
+plt.bar(query_stats_df['queryid'], query_stats_df['total_time'])
+plt.xlabel('Query ID')
+plt.ylabel('Total Time (ms)')
+plt.title('Query Execution Times')
+plt.show()
+Generate the Report:
+Compile the data and visualizations into a report using a library like reportlab or by generating an HTML report.
+
+python
+Copy code
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+
+def generate_report():
+    c = canvas.Canvas("database_profile_report.pdf", pagesize=letter)
+    width, height = letter
+    c.drawString(30, height - 30, "Database Profile Report")
+    
+    # Add a table for database statistics
+    c.drawString(30, height - 60, "Database Statistics:")
+    db_stats_table = db_stats_df.to_string(index=False)
+    c.drawString(30, height - 80, db_stats_table)
+    
+    # Save the PDF
+    c.save()
+
+generate_report()
+This is a basic outline. Depending on your needs, you may need to expand on the data collection, analysis, and report generation steps. For example, you can add more visualizations, perform more detailed analysis, and enhance the report formatting.
