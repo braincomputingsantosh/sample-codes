@@ -1,85 +1,113 @@
 import psycopg2
 import pandas as pd
-import matplotlib.pyplot as plt
-import os
+from jinja2 import Template
 
-# Connect to PostgreSQL
-conn = psycopg2.connect(
-    dbname="your_database",
-    user="your_user",
-    password="your_password",
-    host="your_host",
-    port="your_port"
-)
+# Database connection parameters
+DB_PARAMS = {
+    'dbname': 'your_db_name',
+    'user': 'your_username',
+    'password': 'your_password',
+    'host': 'your_host',
+    'port': 'your_port'
+}
 
-# Function to execute a query and return the results as a DataFrame
-def execute_query(query, columns):
-    with conn.cursor() as cursor:
-        cursor.execute(query)
-        results = cursor.fetchall()
-        return pd.DataFrame(results, columns=columns)
+SCHEMA_NAME = 'bk_hpi'
 
-# Collect data from various statistics views
-db_stats_df = execute_query("SELECT * FROM pg_stat_database WHERE datname = 'your_database';", ['datid', 'datname', 'numbackends', 'xact_commit', 'xact_rollback', 'blks_read', 'blks_hit', 'tup_returned', 'tup_fetched', 'tup_inserted', 'tup_updated', 'tup_deleted', 'conflicts', 'temp_files', 'temp_bytes', 'deadlocks', 'blk_read_time', 'blk_write_time', 'stats_reset'])
-table_stats_df = execute_query("SELECT relname, seq_scan, idx_scan, n_tup_ins, n_tup_upd, n_tup_del FROM pg_stat_user_tables;", ['relname', 'seq_scan', 'idx_scan', 'n_tup_ins', 'n_tup_upd', 'n_tup_del'])
-lock_stats_df = execute_query("SELECT * FROM pg_locks;", ['locktype', 'database', 'relation', 'page', 'tuple', 'virtualxid', 'transactionid', 'classid', 'objid', 'objsubid', 'virtualtransaction', 'pid', 'mode', 'granted', 'fastpath'])
-node_stats_df = execute_query("SELECT nodeid, nodename, nodeport, noderole, isactive FROM pg_dist_node;", ['nodeid', 'nodename', 'nodeport', 'noderole', 'isactive'])
-shard_stats_df = execute_query("SELECT shardid, shardstorage, min_value, max_value, num_nodes FROM pg_dist_shard;", ['shardid', 'shardstorage', 'min_value', 'max_value', 'num_nodes'])
+# Connect to the database
+def get_connection():
+    return psycopg2.connect(**DB_PARAMS)
 
-# Generate visualizations for collected data
-# Example: Visualizing table scan statistics
-plt.figure(figsize=(10, 6))
-plt.bar(table_stats_df['relname'], table_stats_df['seq_scan'], label='Sequential Scans')
-plt.bar(table_stats_df['relname'], table_stats_df['idx_scan'], bottom=table_stats_df['seq_scan'], label='Index Scans')
-plt.xlabel('Table Name')
-plt.ylabel('Scan Count')
-plt.title('Sequential vs. Index Scans per Table')
-plt.xticks(rotation=90)
-plt.legend()
-plt.tight_layout()
-plt.savefig('table_scan_statistics.png')
-plt.close()
+# Get list of tables in the schema
+def get_tables(schema):
+    query = f"""
+    SELECT table_name
+    FROM information_schema.tables
+    WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE';
+    """
+    with get_connection() as conn:
+        return pd.read_sql(query, conn)
 
-# Generate the HTML report
-def generate_html_report():
-    report_content = f"""
+# Get unique keys and their min and max values for a table
+def get_unique_keys_info(table, schema):
+    query = f"""
+    SELECT a.attname AS column_name,
+           MIN(t.{{column}}) AS min_value,
+           MAX(t.{{column}}) AS max_value
+    FROM pg_index i
+    JOIN pg_attribute a ON a.attnum = ANY(i.indkey)
+    JOIN pg_class c ON c.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    LEFT JOIN {schema}.{table} t ON true
+    WHERE i.indisunique
+      AND c.relname = '{table}'
+      AND n.nspname = '{schema}'
+    GROUP BY a.attname;
+    """
+    with get_connection() as conn:
+        return pd.read_sql(query, conn)
+
+# Generate HTML report
+def generate_html_report(tables_info):
+    template = """
+    <!DOCTYPE html>
     <html>
     <head>
-        <title>Database Profile Report</title>
+        <title>Schema Report: {{ schema_name }}</title>
         <style>
-            body {{ font-family: Arial, sans-serif; }}
-            table {{ border-collapse: collapse; width: 100%; }}
-            th, td {{ border: 1px solid #ddd; padding: 8px; }}
-            th {{ background-color: #f2f2f2; }}
+            table {
+                width: 100%;
+                border-collapse: collapse;
+            }
+            table, th, td {
+                border: 1px solid black;
+            }
+            th, td {
+                padding: 10px;
+                text-align: left;
+            }
         </style>
     </head>
     <body>
-        <h1>Database Profile Report</h1>
-        
-        <h2>Database Statistics</h2>
-        {db_stats_df.to_html(index=False)}
-        
-        <h2>Table Scan Statistics</h2>
-        <img src="table_scan_statistics.png" alt="Table Scan Statistics">
-        
-        <h2>Table Statistics</h2>
-        {table_stats_df.to_html(index=False)}
-        
-        <h2>Lock Statistics</h2>
-        {lock_stats_df.to_html(index=False)}
-        
-        <h2>Node Statistics</h2>
-        {node_stats_df.to_html(index=False)}
-        
-        <h2>Shard Statistics</h2>
-        {shard_stats_df.to_html(index=False)}
+        <h1>Schema Report: {{ schema_name }}</h1>
+        {% for table, keys_info in tables_info.items() %}
+            <h2>Table: {{ table }}</h2>
+            {% if keys_info.empty %}
+                <p>No unique keys found.</p>
+            {% else %}
+                <table>
+                    <tr>
+                        <th>Unique Key</th>
+                        <th>Min Value</th>
+                        <th>Max Value</th>
+                    </tr>
+                    {% for _, row in keys_info.iterrows() %}
+                        <tr>
+                            <td>{{ row['column_name'] }}</td>
+                            <td>{{ row['min_value'] }}</td>
+                            <td>{{ row['max_value'] }}</td>
+                        </tr>
+                    {% endfor %}
+                </table>
+            {% endif %}
+        {% endfor %}
     </body>
     </html>
     """
-    with open("database_profile_report.html", "w") as file:
-        file.write(report_content)
+    return Template(template).render(schema_name=SCHEMA_NAME, tables_info=tables_info)
 
-generate_html_report()
+def main():
+    tables = get_tables(SCHEMA_NAME)
+    tables_info = {}
+    
+    for table in tables['table_name']:
+        keys_info = get_unique_keys_info(table, SCHEMA_NAME)
+        tables_info[table] = keys_info
 
-# Open the HTML report in the default web browser
-os.system("open database_profile_report.html" if os.name == "posix" else "start database_profile_report.html")
+    html_report = generate_html_report(tables_info)
+
+    with open('schema_report.html', 'w') as file:
+        file.write(html_report)
+    print("Report generated: schema_report.html")
+
+if __name__ == "__main__":
+    main()
