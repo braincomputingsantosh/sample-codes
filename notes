@@ -1,29 +1,12 @@
-# Get unique keys and their min and max values for a table
-def get_unique_keys_info(table, schema):
-    key_columns_query = f"""
-    SELECT a.attname AS column_name
-    FROM pg_index i
-    JOIN pg_attribute a ON a.attnum = ANY(i.indkey)
-    JOIN pg_class c ON c.oid = i.indrelid
-    JOIN pg_namespace n ON n.oid = c.relnamespace
-    WHERE i.indisunique
-      AND c.relname = '{table}'
-      AND n.nspname = '{schema}';
-    """
-    with get_connection() as conn:
-        key_columns = pd.read_sql(key_columns_query, conn)['column_name']
-
-    keys_info = []
-    for column in key_columns:
-        min_max_query = f"""
-        SELECT 
-            '{column}' AS column_name,
-            MIN({column}) AS min_value,
-            MAX({column}) AS max_value
-        FROM {schema}.{table};
-        """
-        with get_connection() as conn:
-            result = pd.read_sql(min_max_query, conn)
-            keys_info.append(result)
-
-    return pd.concat(keys_info, ignore_index=True) if keys_info else pd.DataFrame()
+plt.figure(figsize=(12, 10))  # Increase the figure size for better readability
+y_pos = range(len(table_stats_df['relname']))  # Generate a range for the y-axis positions
+plt.barh(y_pos, table_stats_df['seq_scan'], label='Sequential Scans', color='skyblue')
+plt.barh(y_pos, table_stats_df['idx_scan'], left=table_stats_df['seq_scan'], label='Index Scans', color='lightgreen')
+plt.yticks(y_pos, table_stats_df['relname'])  # Use table names as labels on the y-axis
+plt.xlabel('Scan Count')
+plt.ylabel('Table Name')
+plt.title('Sequential vs. Index Scans per Table')
+plt.legend()
+plt.tight_layout()
+plt.savefig('table_scan_statistics.png')
+plt.close()
