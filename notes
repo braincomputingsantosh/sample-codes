@@ -1,113 +1,29 @@
-import psycopg2
-import pandas as pd
-from jinja2 import Template
-
-# Database connection parameters
-DB_PARAMS = {
-    'dbname': 'your_db_name',
-    'user': 'your_username',
-    'password': 'your_password',
-    'host': 'your_host',
-    'port': 'your_port'
-}
-
-SCHEMA_NAME = 'bk_hpi'
-
-# Connect to the database
-def get_connection():
-    return psycopg2.connect(**DB_PARAMS)
-
-# Get list of tables in the schema
-def get_tables(schema):
-    query = f"""
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = '{schema}' AND table_type = 'BASE TABLE';
-    """
-    with get_connection() as conn:
-        return pd.read_sql(query, conn)
-
 # Get unique keys and their min and max values for a table
 def get_unique_keys_info(table, schema):
-    query = f"""
-    SELECT a.attname AS column_name,
-           MIN(t.{{column}}) AS min_value,
-           MAX(t.{{column}}) AS max_value
+    key_columns_query = f"""
+    SELECT a.attname AS column_name
     FROM pg_index i
     JOIN pg_attribute a ON a.attnum = ANY(i.indkey)
     JOIN pg_class c ON c.oid = i.indrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
-    LEFT JOIN {schema}.{table} t ON true
     WHERE i.indisunique
       AND c.relname = '{table}'
-      AND n.nspname = '{schema}'
-    GROUP BY a.attname;
+      AND n.nspname = '{schema}';
     """
     with get_connection() as conn:
-        return pd.read_sql(query, conn)
+        key_columns = pd.read_sql(key_columns_query, conn)['column_name']
 
-# Generate HTML report
-def generate_html_report(tables_info):
-    template = """
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Schema Report: {{ schema_name }}</title>
-        <style>
-            table {
-                width: 100%;
-                border-collapse: collapse;
-            }
-            table, th, td {
-                border: 1px solid black;
-            }
-            th, td {
-                padding: 10px;
-                text-align: left;
-            }
-        </style>
-    </head>
-    <body>
-        <h1>Schema Report: {{ schema_name }}</h1>
-        {% for table, keys_info in tables_info.items() %}
-            <h2>Table: {{ table }}</h2>
-            {% if keys_info.empty %}
-                <p>No unique keys found.</p>
-            {% else %}
-                <table>
-                    <tr>
-                        <th>Unique Key</th>
-                        <th>Min Value</th>
-                        <th>Max Value</th>
-                    </tr>
-                    {% for _, row in keys_info.iterrows() %}
-                        <tr>
-                            <td>{{ row['column_name'] }}</td>
-                            <td>{{ row['min_value'] }}</td>
-                            <td>{{ row['max_value'] }}</td>
-                        </tr>
-                    {% endfor %}
-                </table>
-            {% endif %}
-        {% endfor %}
-    </body>
-    </html>
-    """
-    return Template(template).render(schema_name=SCHEMA_NAME, tables_info=tables_info)
+    keys_info = []
+    for column in key_columns:
+        min_max_query = f"""
+        SELECT 
+            '{column}' AS column_name,
+            MIN({column}) AS min_value,
+            MAX({column}) AS max_value
+        FROM {schema}.{table};
+        """
+        with get_connection() as conn:
+            result = pd.read_sql(min_max_query, conn)
+            keys_info.append(result)
 
-def main():
-    tables = get_tables(SCHEMA_NAME)
-    tables_info = {}
-    
-    for table in tables['table_name']:
-        keys_info = get_unique_keys_info(table, SCHEMA_NAME)
-        tables_info[table] = keys_info
-
-    html_report = generate_html_report(tables_info)
-
-    with open('schema_report.html', 'w') as file:
-        file.write(html_report)
-    print("Report generated: schema_report.html")
-
-if __name__ == "__main__":
-    main()
+    return pd.concat(keys_info, ignore_index=True) if keys_info else pd.DataFrame()
