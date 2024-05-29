@@ -1,38 +1,14 @@
-import requests
+from databricks_api import DatabricksAPI
 import json
 
 # Define your Databricks workspace URL and personal access token
 DATABRICKS_INSTANCE = 'https://<your-databricks-instance>'
 ACCESS_TOKEN = 'dapi<your-access-token>'
 
-# Define the headers for authentication
-headers = {
-    'Authorization': f'Bearer {ACCESS_TOKEN}',
-    'Content-Type': 'application/json'
-}
+# Initialize the DatabricksAPI client
+db = DatabricksAPI(host=DATABRICKS_INSTANCE, token=ACCESS_TOKEN)
 
-# Generic function to get details from Databricks API
-def get_databricks_details(endpoint):
-    try:
-        response = requests.get(endpoint, headers=headers)
-        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx and 5xx)
-        try:
-            return response.json()  # Attempt to decode JSON response
-        except json.JSONDecodeError:
-            print(f"Error decoding JSON from response for endpoint: {endpoint}")
-            print(response.text)  # Print the raw response text for debugging
-            return None
-    except requests.exceptions.RequestException as e:
-        print(f"HTTP Request failed: {e}")
-        return None
-
-# Function to fetch and return details for a given data type endpoint
-def fetch_details(data_type, endpoint_suffix):
-    endpoint = f'{DATABRICKS_INSTANCE}/api/2.0/{endpoint_suffix}'
-    details = get_databricks_details(endpoint)
-    return details
-
-# Define the data types and their respective endpoints
+# Define the data types and their respective API endpoints
 data_types = {
     'AccessLevelFilter': 'preview/permissions/workspaces',
     'BudgetDetail': 'budget/details',
@@ -96,6 +72,15 @@ data_types = {
     'UsageInstruction': 'usage/instructions'
 }
 
+# Function to get details from Databricks API using databricks-api client
+def get_databricks_details(endpoint):
+    try:
+        response = db.api('GET', endpoint)
+        return response
+    except Exception as e:
+        print(f"Error accessing {endpoint}: {e}")
+        return None
+
 # Fetch details for all data types and generate HTML report
 report_content = """
 <html>
@@ -112,7 +97,7 @@ report_content = """
 """
 
 for data_type, endpoint in data_types.items():
-    details = fetch_details(data_type, endpoint)
+    details = get_databricks_details(endpoint)
     report_content += f'<h2>{data_type}</h2>'
     if details:
         report_content += f'<pre>{json.dumps(details, indent=2)}</pre>'
