@@ -1,12 +1,91 @@
-plt.figure(figsize=(12, 10))  # Increase the figure size for better readability
-y_pos = range(len(table_stats_df['relname']))  # Generate a range for the y-axis positions
-plt.barh(y_pos, table_stats_df['seq_scan'], label='Sequential Scans', color='skyblue')
-plt.barh(y_pos, table_stats_df['idx_scan'], left=table_stats_df['seq_scan'], label='Index Scans', color='lightgreen')
-plt.yticks(y_pos, table_stats_df['relname'])  # Use table names as labels on the y-axis
-plt.xlabel('Scan Count')
-plt.ylabel('Table Name')
-plt.title('Sequential vs. Index Scans per Table')
-plt.legend()
-plt.tight_layout()
-plt.savefig('table_scan_statistics.png')
-plt.close()
+import requests
+import json
+
+# Define your Databricks workspace URL and personal access token
+DATABRICKS_INSTANCE = 'https://<your-databricks-instance>'
+ACCESS_TOKEN = 'dapi<your-access-token>'
+
+# Define the headers for authentication
+headers = {
+    'Authorization': f'Bearer {ACCESS_TOKEN}',
+    'Content-Type': 'application/json'
+}
+
+# Function to get details for a specific data type from a given endpoint
+def get_details(endpoint, entity_name):
+    response = requests.get(f'{DATABRICKS_INSTANCE}{endpoint}', headers=headers)
+    if response.status_code == 200:
+        data = response.json()
+        print(f"{entity_name} details:\n{json.dumps(data, indent=2)}\n")
+        return data
+    else:
+        print(f'Error fetching {entity_name}: {response.status_code}, {response.text}')
+        return None
+
+# Define the endpoints for each data type
+endpoints = {
+    "AccessLevelFilter": "/api/2.0/access/levels",
+    "BudgetDetail": "/api/2.0/budget/details",
+    "CloudWatchDashboard": "/api/2.0/cloudwatch/dashboards",
+    "CodeStarParameters": "/api/2.0/codestar/parameters",
+    "ConstraintDetail": "/api/2.0/constraint/details",
+    "ConstraintSummary": "/api/2.0/constraint/summary",
+    "EngineWorkflowResourceIdentifier": "/api/2.0/engine/workflow/resource/identifiers",
+    "ExecutionParameter": "/api/2.0/execution/parameters",
+    "FailedServiceActionAssociation": "/api/2.0/failed/service/action/associations",
+    "LastSync": "/api/2.0/last/sync",
+    "LaunchPath": "/api/2.0/launch/paths",
+    "LaunchPathSummary": "/api/2.0/launch/path/summary",
+    "ListRecordHistorySearchFilter": "/api/2.0/record/history/search/filters",
+    "ListTagOptionsFilters": "/api/2.0/tag/options/filters",
+    "OrganizationNode": "/api/2.0/organization/nodes",
+    "ParameterConstraints": "/api/2.0/parameter/constraints",
+    "PortfolioDetail": "/api/2.0/portfolio/details",
+    "PortfolioShareDetail": "/api/2.0/portfolio/share/details",
+    "Principal": "/api/2.0/principals",
+    "ProductViewAggregationValue": "/api/2.0/product/view/aggregation/values",
+    "ProductViewDetail": "/api/2.0/product/view/details",
+    "ProductViewSummary": "/api/2.0/product/view/summary",
+    "ProvisionedProductAttribute": "/api/2.0/provisioned/product/attributes",
+    "ProvisionedProductDetail": "/api/2.0/provisioned/product/details",
+    "ProvisionedProductPlanDetails": "/api/2.0/provisioned/product/plan/details",
+    "ProvisionedProductPlanSummary": "/api/2.0/provisioned/product/plan/summary",
+    "ProvisioningArtifact": "/api/2.0/provisioning/artifacts",
+    "ProvisioningArtifactDetail": "/api/2.0/provisioning/artifact/details",
+    "ProvisioningArtifactOutput": "/api/2.0/provisioning/artifact/outputs",
+    "ProvisioningArtifactParameter": "/api/2.0/provisioning/artifact/parameters",
+    "ProvisioningArtifactPreferences": "/api/2.0/provisioning/artifact/preferences",
+    "ProvisioningArtifactProperties": "/api/2.0/provisioning/artifact/properties",
+    "ProvisioningArtifactSummary": "/api/2.0/provisioning/artifact/summary",
+    "ProvisioningArtifactView": "/api/2.0/provisioning/artifact/views",
+    "ProvisioningParameter": "/api/2.0/provisioning/parameters",
+    "ProvisioningPreferences": "/api/2.0/provisioning/preferences",
+    "RecordDetail": "/api/2.0/record/details",
+    "RecordError": "/api/2.0/record/errors",
+    "RecordOutput": "/api/2.0/record/outputs",
+    "RecordTag": "/api/2.0/record/tags",
+    "ResourceChange": "/api/2.0/resource/changes",
+    "ResourceChangeDetail": "/api/2.0/resource/change/details",
+    "ResourceDetail": "/api/2.0/resource/details",
+    "ResourceTargetDefinition": "/api/2.0/resource/target/definitions",
+    "ServiceActionAssociation": "/api/2.0/service/action/associations",
+    "ServiceActionDetail": "/api/2.0/service/action/details",
+    "ServiceActionSummary": "/api/2.0/service/action/summary",
+    "ShareDetails": "/api/2.0/share/details",
+    "ShareError": "/api/2.0/share/errors",
+    "SourceConnection": "/api/2.0/source/connections",
+    "SourceConnectionDetail": "/api/2.0/source/connection/details",
+    "SourceConnectionParameters": "/api/2.0/source/connection/parameters",
+    "StackInstance": "/api/2.0/stack/instances",
+    "Tag": "/api/2.0/tags",
+    "TagOptionDetail": "/api/2.0/tag/option/details",
+    "TagOptionSummary": "/api/2.0/tag/option/summary",
+    "UniqueTagResourceIdentifier": "/api/2.0/unique/tag/resource/identifiers",
+    "UpdateProvisioningParameter": "/api/2.0/update/provisioning/parameters",
+    "UpdateProvisioningPreferences": "/api/2.0/update/provisioning/preferences",
+    "UsageInstruction": "/api/2.0/usage/instructions"
+}
+
+# Fetch details for each entity
+for entity_name, endpoint in endpoints.items():
+    get_details(endpoint, entity_name)
