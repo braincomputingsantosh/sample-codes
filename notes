@@ -13,11 +13,17 @@ headers = {
 
 # Generic function to get details from Databricks API
 def get_databricks_details(endpoint):
-    response = requests.get(endpoint, headers=headers)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        print(f'Error: {response.status_code}, {response.text}')
+    try:
+        response = requests.get(endpoint, headers=headers)
+        response.raise_for_status()  # Raises an HTTPError for bad responses (4xx and 5xx)
+        try:
+            return response.json()  # Attempt to decode JSON response
+        except json.JSONDecodeError:
+            print(f"Error decoding JSON from response for endpoint: {endpoint}")
+            print(response.text)  # Print the raw response text for debugging
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"HTTP Request failed: {e}")
         return None
 
 # Function to fetch and return details for a given data type endpoint
