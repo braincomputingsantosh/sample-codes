@@ -20,13 +20,107 @@ def get_databricks_details(endpoint):
         print(f'Error: {response.status_code}, {response.text}')
         return None
 
-# Function to fetch and print details for a given data type endpoint
-def fetch_and_print_details(data_type, endpoint_suffix):
+# Function to fetch and return details for a given data type endpoint
+def fetch_details(data_type, endpoint_suffix):
     endpoint = f'{DATABRICKS_INSTANCE}/api/2.0/{endpoint_suffix}'
     details = get_databricks_details(endpoint)
-    if details:
-        print(f'Details for {data_type}:')
-        print(json.dumps(details, indent=2))
+    return details
 
-# Example usage for AccessLevelFilter
-fetch_and_print_details('AccessLevelFilter', 'preview/permissions/workspaces')
+# Define the data types and their respective endpoints
+data_types = {
+    'AccessLevelFilter': 'preview/permissions/workspaces',
+    'BudgetDetail': 'budget/details',
+    'CloudWatchDashboard': 'monitoring/cloudwatch/dashboards',
+    'CodeStarParameters': 'codestar/parameters',
+    'ConstraintDetail': 'constraints/details',
+    'ConstraintSummary': 'constraints/summaries',
+    'EngineWorkflowResourceIdentifier': 'workflows/engine/resources',
+    'ExecutionParameter': 'executions/parameters',
+    'FailedServiceActionAssociation': 'service-actions/associations/failed',
+    'LastSync': 'sync/last',
+    'LaunchPath': 'launch/paths',
+    'LaunchPathSummary': 'launch/paths/summaries',
+    'ListRecordHistorySearchFilter': 'records/history/search',
+    'ListTagOptionsFilters': 'tags/options/filters',
+    'OrganizationNode': 'organization/nodes',
+    'ParameterConstraints': 'parameters/constraints',
+    'PortfolioDetail': 'portfolio/details',
+    'PortfolioShareDetail': 'portfolio/shares/details',
+    'Principal': 'principals',
+    'ProductViewAggregationValue': 'products/views/aggregation-values',
+    'ProductViewDetail': 'products/views/details',
+    'ProductViewSummary': 'products/views/summaries',
+    'ProvisionedProductAttribute': 'provisioned-products/attributes',
+    'ProvisionedProductDetail': 'provisioned-products/details',
+    'ProvisionedProductPlanDetails': 'provisioned-products/plans/details',
+    'ProvisionedProductPlanSummary': 'provisioned-products/plans/summaries',
+    'ProvisioningArtifact': 'provisioning-artifacts',
+    'ProvisioningArtifactDetail': 'provisioning-artifacts/details',
+    'ProvisioningArtifactOutput': 'provisioning-artifacts/outputs',
+    'ProvisioningArtifactParameter': 'provisioning-artifacts/parameters',
+    'ProvisioningArtifactPreferences': 'provisioning-artifacts/preferences',
+    'ProvisioningArtifactProperties': 'provisioning-artifacts/properties',
+    'ProvisioningArtifactSummary': 'provisioning-artifacts/summaries',
+    'ProvisioningArtifactView': 'provisioning-artifacts/views',
+    'ProvisioningParameter': 'provisioning-parameters',
+    'ProvisioningPreferences': 'provisioning-preferences',
+    'RecordDetail': 'records/details',
+    'RecordError': 'records/errors',
+    'RecordOutput': 'records/outputs',
+    'RecordTag': 'records/tags',
+    'ResourceChange': 'resources/changes',
+    'ResourceChangeDetail': 'resources/changes/details',
+    'ResourceDetail': 'resources/details',
+    'ResourceTargetDefinition': 'resources/target-definitions',
+    'ServiceActionAssociation': 'service-actions/associations',
+    'ServiceActionDetail': 'service-actions/details',
+    'ServiceActionSummary': 'service-actions/summaries',
+    'ShareDetails': 'shares/details',
+    'ShareError': 'shares/errors',
+    'SourceConnection': 'source-connections',
+    'SourceConnectionDetail': 'source-connections/details',
+    'SourceConnectionParameters': 'source-connections/parameters',
+    'StackInstance': 'stacks/instances',
+    'Tag': 'tags',
+    'TagOptionDetail': 'tags/options/details',
+    'TagOptionSummary': 'tags/options/summaries',
+    'UniqueTagResourceIdentifier': 'tags/resources/identifiers',
+    'UpdateProvisioningParameter': 'provisioning-parameters/updates',
+    'UpdateProvisioningPreferences': 'provisioning-preferences/updates',
+    'UsageInstruction': 'usage/instructions'
+}
+
+# Fetch details for all data types and generate HTML report
+report_content = """
+<html>
+<head>
+    <title>Databricks Service Catalog Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1, h2 { color: #2c3e50; }
+        pre { background-color: #ecf0f1; padding: 10px; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <h1>Databricks Service Catalog Report</h1>
+"""
+
+for data_type, endpoint in data_types.items():
+    details = fetch_details(data_type, endpoint)
+    report_content += f'<h2>{data_type}</h2>'
+    if details:
+        report_content += f'<pre>{json.dumps(details, indent=2)}</pre>'
+    else:
+        report_content += '<p>No details available or an error occurred.</p>'
+
+report_content += """
+</body>
+</html>
+"""
+
+# Save the HTML report to a file
+output_file = '/dbfs/tmp/databricks_service_catalog_report.html'
+with open(output_file, 'w') as file:
+    file.write(report_content)
+
+print(f'Report generated and saved to {output_file}')
