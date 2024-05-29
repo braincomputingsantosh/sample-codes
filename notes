@@ -1,4 +1,5 @@
 from databricks_api import DatabricksAPI
+import requests
 import json
 
 # Define your Databricks workspace URL and personal access token
@@ -7,6 +8,12 @@ ACCESS_TOKEN = 'dapi<your-access-token>'
 
 # Initialize the DatabricksAPI client
 db = DatabricksAPI(host=DATABRICKS_INSTANCE, token=ACCESS_TOKEN)
+
+# Headers for requests library
+headers = {
+    'Authorization': f'Bearer {ACCESS_TOKEN}',
+    'Content-Type': 'application/json'
+}
 
 # Define the data types and their respective API endpoints
 data_types = {
@@ -72,14 +79,20 @@ data_types = {
     'UsageInstruction': 'usage/instructions'
 }
 
-# Function to get details from Databricks API using databricks-api client
+# Function to get details from Databricks API using requests for endpoints not covered by databricks-api client
 def get_databricks_details(endpoint):
+    url = f'{DATABRICKS_INSTANCE}/api/2.0/{endpoint}'
+    response = requests.get(url, headers=headers)
     try:
-        response = db.api('GET', endpoint)
-        return response
-    except Exception as e:
-        print(f"Error accessing {endpoint}: {e}")
-        return None
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as err:
+        print(f"HTTP error occurred: {err}")
+    except requests.exceptions.RequestException as err:
+        print(f"Error occurred: {err}")
+    except json.JSONDecodeError as err:
+        print(f"JSON decode error: {err}")
+    return None
 
 # Fetch details for all data types and generate HTML report
 report_content = """
