@@ -1,130 +1,90 @@
-from databricks_api import DatabricksAPI
-import requests
-import json
+# Databricks Documentation Guide
 
-# Define your Databricks workspace URL and personal access token
-DATABRICKS_INSTANCE = 'https://<your-databricks-instance>'
-ACCESS_TOKEN = 'dapi<your-access-token>'
+## Table of Contents
+1. [Accessing Databricks URL](#accessing-databricks-url)
+2. [Launching a Notebook](#launching-a-notebook)
+3. [Running SQL Scripts](#running-sql-scripts)
+4. [Running Python Scripts](#running-python-scripts)
 
-# Initialize the DatabricksAPI client
-db = DatabricksAPI(host=DATABRICKS_INSTANCE, token=ACCESS_TOKEN)
+---
 
-# Headers for requests library
-headers = {
-    'Authorization': f'Bearer {ACCESS_TOKEN}',
-    'Content-Type': 'application/json'
-}
+## Accessing Databricks URL
 
-# Define the data types and their respective API endpoints
-data_types = {
-    'AccessLevelFilter': 'preview/permissions/workspaces',
-    'BudgetDetail': 'budget/details',
-    'CloudWatchDashboard': 'monitoring/cloudwatch/dashboards',
-    'CodeStarParameters': 'codestar/parameters',
-    'ConstraintDetail': 'constraints/details',
-    'ConstraintSummary': 'constraints/summaries',
-    'EngineWorkflowResourceIdentifier': 'workflows/engine/resources',
-    'ExecutionParameter': 'executions/parameters',
-    'FailedServiceActionAssociation': 'service-actions/associations/failed',
-    'LastSync': 'sync/last',
-    'LaunchPath': 'launch/paths',
-    'LaunchPathSummary': 'launch/paths/summaries',
-    'ListRecordHistorySearchFilter': 'records/history/search',
-    'ListTagOptionsFilters': 'tags/options/filters',
-    'OrganizationNode': 'organization/nodes',
-    'ParameterConstraints': 'parameters/constraints',
-    'PortfolioDetail': 'portfolio/details',
-    'PortfolioShareDetail': 'portfolio/shares/details',
-    'Principal': 'principals',
-    'ProductViewAggregationValue': 'products/views/aggregation-values',
-    'ProductViewDetail': 'products/views/details',
-    'ProductViewSummary': 'products/views/summaries',
-    'ProvisionedProductAttribute': 'provisioned-products/attributes',
-    'ProvisionedProductDetail': 'provisioned-products/details',
-    'ProvisionedProductPlanDetails': 'provisioned-products/plans/details',
-    'ProvisionedProductPlanSummary': 'provisioned-products/plans/summaries',
-    'ProvisioningArtifact': 'provisioning-artifacts',
-    'ProvisioningArtifactDetail': 'provisioning-artifacts/details',
-    'ProvisioningArtifactOutput': 'provisioning-artifacts/outputs',
-    'ProvisioningArtifactParameter': 'provisioning-artifacts/parameters',
-    'ProvisioningArtifactPreferences': 'provisioning-artifacts/preferences',
-    'ProvisioningArtifactProperties': 'provisioning-artifacts/properties',
-    'ProvisioningArtifactSummary': 'provisioning-artifacts/summaries',
-    'ProvisioningArtifactView': 'provisioning-artifacts/views',
-    'ProvisioningParameter': 'provisioning-parameters',
-    'ProvisioningPreferences': 'provisioning-preferences',
-    'RecordDetail': 'records/details',
-    'RecordError': 'records/errors',
-    'RecordOutput': 'records/outputs',
-    'RecordTag': 'records/tags',
-    'ResourceChange': 'resources/changes',
-    'ResourceChangeDetail': 'resources/changes/details',
-    'ResourceDetail': 'resources/details',
-    'ResourceTargetDefinition': 'resources/target-definitions',
-    'ServiceActionAssociation': 'service-actions/associations',
-    'ServiceActionDetail': 'service-actions/details',
-    'ServiceActionSummary': 'service-actions/summaries',
-    'ShareDetails': 'shares/details',
-    'ShareError': 'shares/errors',
-    'SourceConnection': 'source-connections',
-    'SourceConnectionDetail': 'source-connections/details',
-    'SourceConnectionParameters': 'source-connections/parameters',
-    'StackInstance': 'stacks/instances',
-    'Tag': 'tags',
-    'TagOptionDetail': 'tags/options/details',
-    'TagOptionSummary': 'tags/options/summaries',
-    'UniqueTagResourceIdentifier': 'tags/resources/identifiers',
-    'UpdateProvisioningParameter': 'provisioning-parameters/updates',
-    'UpdateProvisioningPreferences': 'provisioning-preferences/updates',
-    'UsageInstruction': 'usage/instructions'
-}
+1. **Open Your Web Browser:**
+   - Open your preferred web browser (e.g., Chrome, Firefox, Safari).
 
-# Function to get details from Databricks API using requests for endpoints not covered by databricks-api client
-def get_databricks_details(endpoint):
-    url = f'{DATABRICKS_INSTANCE}/api/2.0/{endpoint}'
-    response = requests.get(url, headers=headers)
-    try:
-        response.raise_for_status()
-        return response.json()
-    except requests.exceptions.HTTPError as err:
-        print(f"HTTP error occurred: {err}")
-    except requests.exceptions.RequestException as err:
-        print(f"Error occurred: {err}")
-    except json.JSONDecodeError as err:
-        print(f"JSON decode error: {err}")
-    return None
+2. **Navigate to the Databricks URL:**
+   - Enter the URL provided by your Databricks administrator or your organization's Databricks URL. It typically looks like `https://<databricks-instance>.cloud.databricks.com`.
 
-# Fetch details for all data types and generate HTML report
-report_content = """
-<html>
-<head>
-    <title>Databricks Service Catalog Report</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        h1, h2 { color: #2c3e50; }
-        pre { background-color: #ecf0f1; padding: 10px; border-radius: 5px; }
-    </style>
-</head>
-<body>
-    <h1>Databricks Service Catalog Report</h1>
-"""
+3. **Log In:**
+   - Use your credentials to log in. This could be your corporate single sign-on (SSO) or Databricks username and password.
 
-for data_type, endpoint in data_types.items():
-    details = get_databricks_details(endpoint)
-    report_content += f'<h2>{data_type}</h2>'
-    if details:
-        report_content += f'<pre>{json.dumps(details, indent=2)}</pre>'
-    else:
-        report_content += '<p>No details available or an error occurred.</p>'
+4. **Home Page:**
+   - Once logged in, you will be taken to the Databricks home page where you can see recent notebooks, jobs, and other resources.
 
-report_content += """
-</body>
-</html>
-"""
+---
 
-# Save the HTML report to a file
-output_file = '/dbfs/tmp/databricks_service_catalog_report.html'
-with open(output_file, 'w') as file:
-    file.write(report_content)
+## Launching a Notebook
 
-print(f'Report generated and saved to {output_file}')
+1. **Navigate to the Workspace:**
+   - From the sidebar, click on the `Workspace` icon.
+
+2. **Create a New Notebook:**
+   - Click the `Create` button at the top left and select `Notebook`.
+
+3. **Configure the Notebook:**
+   - **Name:** Give your notebook a meaningful name.
+   - **Default Language:** Choose the default language for the notebook (Python, SQL, Scala, R).
+   - **Cluster:** Select an existing cluster to attach your notebook to, or create a new one.
+
+4. **Create:**
+   - Click the `Create` button to create the notebook.
+
+---
+
+## Running SQL Scripts
+
+1. **Set Notebook Language to SQL:**
+   - If your notebook's default language is not SQL, you can switch to SQL for individual cells by adding `%sql` at the beginning of the cell.
+
+2. **Write SQL Queries:**
+   - Example:
+     ```sql
+     %sql
+     SELECT * FROM database_name.table_name
+     WHERE condition
+     ```
+
+3. **Run SQL Queries:**
+   - Click the `Run` button (play icon) at the top right of the cell, or press `Shift + Enter` to execute the SQL query.
+
+4. **View Results:**
+   - The results of your query will be displayed directly below the cell.
+
+---
+
+## Running Python Scripts
+
+1. **Set Notebook Language to Python:**
+   - If your notebook's default language is not Python, you can switch to Python for individual cells by adding `%python` at the beginning of the cell.
+
+2. **Write Python Code:**
+   - Example:
+     ```python
+     %python
+     import pandas as pd
+
+     # Create a simple DataFrame
+     data = {'Name': ['Alice', 'Bob', 'Carol'],
+             'Age': [25, 30, 35]}
+     df = pd.DataFrame(data)
+
+     # Display the DataFrame
+     display(df)
+     ```
+
+3. **Run Python Code:**
+   - Click the `Run` button (play icon) at the top right of the cell, or press `Shift + Enter` to execute the Python code.
+
+4. **View Results:**
+   - The results of your code execution will be displayed directly below the cell. For data frames, Databricks provides a tabular view.
