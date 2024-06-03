@@ -1,90 +1,18 @@
-# Databricks Documentation Guide
-
-## Table of Contents
-1. [Accessing Databricks URL](#accessing-databricks-url)
-2. [Launching a Notebook](#launching-a-notebook)
-3. [Running SQL Scripts](#running-sql-scripts)
-4. [Running Python Scripts](#running-python-scripts)
-
----
-
-## Accessing Databricks URL
-
-1. **Open Your Web Browser:**
-   - Open your preferred web browser (e.g., Chrome, Firefox, Safari).
-
-2. **Navigate to the Databricks URL:**
-   - Enter the URL provided by your Databricks administrator or your organization's Databricks URL. It typically looks like `https://<databricks-instance>.cloud.databricks.com`.
-
-3. **Log In:**
-   - Use your credentials to log in. This could be your corporate single sign-on (SSO) or Databricks username and password.
-
-4. **Home Page:**
-   - Once logged in, you will be taken to the Databricks home page where you can see recent notebooks, jobs, and other resources.
-
----
-
-## Launching a Notebook
-
-1. **Navigate to the Workspace:**
-   - From the sidebar, click on the `Workspace` icon.
-
-2. **Create a New Notebook:**
-   - Click the `Create` button at the top left and select `Notebook`.
-
-3. **Configure the Notebook:**
-   - **Name:** Give your notebook a meaningful name.
-   - **Default Language:** Choose the default language for the notebook (Python, SQL, Scala, R).
-   - **Cluster:** Select an existing cluster to attach your notebook to, or create a new one.
-
-4. **Create:**
-   - Click the `Create` button to create the notebook.
-
----
-
-## Running SQL Scripts
-
-1. **Set Notebook Language to SQL:**
-   - If your notebook's default language is not SQL, you can switch to SQL for individual cells by adding `%sql` at the beginning of the cell.
-
-2. **Write SQL Queries:**
-   - Example:
-     ```sql
-     %sql
-     SELECT * FROM database_name.table_name
-     WHERE condition
-     ```
-
-3. **Run SQL Queries:**
-   - Click the `Run` button (play icon) at the top right of the cell, or press `Shift + Enter` to execute the SQL query.
-
-4. **View Results:**
-   - The results of your query will be displayed directly below the cell.
-
----
-
-## Running Python Scripts
-
-1. **Set Notebook Language to Python:**
-   - If your notebook's default language is not Python, you can switch to Python for individual cells by adding `%python` at the beginning of the cell.
-
-2. **Write Python Code:**
-   - Example:
-     ```python
-     %python
-     import pandas as pd
-
-     # Create a simple DataFrame
-     data = {'Name': ['Alice', 'Bob', 'Carol'],
-             'Age': [25, 30, 35]}
-     df = pd.DataFrame(data)
-
-     # Display the DataFrame
-     display(df)
-     ```
-
-3. **Run Python Code:**
-   - Click the `Run` button (play icon) at the top right of the cell, or press `Shift + Enter` to execute the Python code.
-
-4. **View Results:**
-   - The results of your code execution will be displayed directly below the cell. For data frames, Databricks provides a tabular view.
+SELECT 
+    consumer_np, 
+    archive_month, 
+    credit_am, 
+    balance_am, 
+    trade_nb,
+    LAG(credit_am) OVER (PARTITION BY consumer_np ORDER BY archive_month, trade_nb) AS prev_credit_am,
+    LAG(balance_am) OVER (PARTITION BY consumer_np ORDER BY archive_month, trade_nb) AS prev_balance_am,
+    LAG(trade_nb) OVER (PARTITION BY consumer_np ORDER BY archive_month, trade_nb) AS prev_trade_nb
+FROM 
+    prod.ccip.tip
+WHERE 
+    archive_month = 2023301 
+    AND consumer_nb = '123456'
+ORDER BY 
+    consumer_nb, 
+    archive_month, 
+    trade_nb;
