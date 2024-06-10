@@ -1,84 +1,104 @@
-Certainly! Here's a document on how to execute the provided YAML file named `data_load_acs_data.yaml`:
+Certainly! Here's how you can run the `data_load_acs_data.yaml` file using a Makefile:
 
-# Executing data_load_acs_data.yaml
+1. Create a file named `Makefile` in the same directory as your `data_load_acs_data.yaml` file.
 
-The `data_load_acs_data.yaml` file contains configuration settings for loading and processing ACS (American Community Survey) data. Here's a step-by-step guide on how to execute this YAML file using Python:
+2. Open the `Makefile` and add the following content:
 
-1. Install the required dependencies:
-   - Make sure you have Python installed on your system.
-   - Install the `PyYAML` library by running the following command:
-     ```
-     pip install pyyaml
-     ```
+```makefile
+# Variables
+YAML_FILE := data_load_acs_data.yaml
+PYTHON_SCRIPT := load_acs_data.py
 
-2. Create a Python script (e.g., `load_acs_data.py`) and add the following code:
-   ```python
-   import yaml
-   from custom_logic import log_file_size, generate_checksum
-   from plugin_scripts.import_geo import import_geo
+# Targets
+.PHONY: all clean
 
-   def load_acs_data(config):
-       # Access configuration settings
-       path = config['path']
-       write_path = config['write_path']
-       project_name = config['project_name']
-       schema_name = config['scheman_name']
-       reprocess = config['reprocess']
+all: load_acs_data
 
-       # Execute process_logic for all files
-       for logic in config['process_logic']:
-           if logic['logic'] == 'custom_logic.log_file_size':
-               log_file_size()
-           elif logic['logic'] == 'custom_logic.generate_checksum':
-               generate_checksum()
+load_acs_data:
+    python $(PYTHON_SCRIPT) $(YAML_FILE)
 
-       # Process mapping
-       for mapping in config['mapping']:
-           file_regex = mapping['file_regex']
-           file_type = mapping['file_type']
-           file_encoding = mapping['file_encoding']
-           column_list = mapping['column_list']
+clean:
+    rm -f *.pyc
+```
 
-           # Execute process_logic for each mapping
-           for logic in mapping['process_logic']:
-               if logic['logic'] == 'custom_logic:count_file_linux_wc':
-                   # Implement count_file_linux_wc logic here
-                   pass
-               elif 'plugin' in logic:
-                   plugin_script = logic['plugin']
-                   if plugin_script == 'plugin_scripts/import_geo.py':
-                       import_geo()
+3. Create the Python script `load_acs_data.py` in the same directory and add the following code:
 
-   # Load the YAML file
-   with open('data_load_acs_data.yaml', 'r') as file:
-       config = yaml.safe_load(file)
+```python
+import sys
+import yaml
+from custom_logic import log_file_size, generate_checksum
+from plugin_scripts.import_geo import import_geo
 
-   # Execute the loading process
-   load_acs_data(config)
-   ```
+def load_acs_data(config):
+    # Access configuration settings
+    path = config['path']
+    write_path = config['write_path']
+    project_name = config['project_name']
+    schema_name = config['scheman_name']
+    reprocess = config['reprocess']
 
-3. Implement the required logic:
+    # Execute process_logic for all files
+    for logic in config['process_logic']:
+        if logic['logic'] == 'custom_logic.log_file_size':
+            log_file_size()
+        elif logic['logic'] == 'custom_logic.generate_checksum':
+            generate_checksum()
+
+    # Process mapping
+    for mapping in config['mapping']:
+        file_regex = mapping['file_regex']
+        file_type = mapping['file_type']
+        file_encoding = mapping['file_encoding']
+        column_list = mapping['column_list']
+
+        # Execute process_logic for each mapping
+        for logic in mapping['process_logic']:
+            if logic['logic'] == 'custom_logic:count_file_linux_wc':
+                # Implement count_file_linux_wc logic here
+                pass
+            elif 'plugin' in logic:
+                plugin_script = logic['plugin']
+                if plugin_script == 'plugin_scripts/import_geo.py':
+                    import_geo()
+
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        print("Usage: python load_acs_data.py <yaml_file>")
+        sys.exit(1)
+
+    yaml_file = sys.argv[1]
+
+    # Load the YAML file
+    with open(yaml_file, 'r') as file:
+        config = yaml.safe_load(file)
+
+    # Execute the loading process
+    load_acs_data(config)
+```
+
+4. Implement the required logic:
    - Create a `custom_logic.py` file and implement the `log_file_size()` and `generate_checksum()` functions according to your specific requirements.
    - Create a `plugin_scripts` directory and add the `import_geo.py` file. Implement the `import_geo()` function in this file based on your needs.
 
-4. Run the Python script:
-   ```
-   python load_acs_data.py
-   ```
+5. Run the Makefile:
+   - Open a terminal and navigate to the directory containing the `Makefile`.
+   - Run the following command:
+     ```
+     make load_acs_data
+     ```
 
-   The script will load the `data_load_acs_data.yaml` file, parse its contents, and execute the defined loading and processing steps.
+   The `make` command will execute the `load_acs_data` target defined in the Makefile. It will run the Python script `load_acs_data.py` with the specified YAML file `data_load_acs_data.yaml` as an argument.
 
-The YAML file contains the following configuration settings:
-- `path`: The source path for the ACS data.
-- `write_path`: The destination path where the processed data will be written.
-- `project_name`: The name of the project.
-- `scheman_name`: The name of the schema.
-- `reprocess`: A flag indicating whether to reprocess the data.
-- `process_logic`: A list of logic steps to be executed for all files.
-- `mapping`: A list of file mappings, each specifying the file regex, file type, file encoding, column list, and process logic.
+   The Python script will load the YAML file, parse its contents, and execute the defined loading and processing steps, similar to the previous example.
 
-The script loads the YAML file, accesses the configuration settings, and executes the defined process logic and file mappings. It calls the respective functions from the `custom_logic.py` file and the `import_geo()` function from the `import_geo.py` plugin script based on the specified logic.
+6. Clean up (optional):
+   - To remove any generated `.pyc` files, you can run the following command:
+     ```
+     make clean
+     ```
+
+   This will execute the `clean` target defined in the Makefile, which removes any `.pyc` files in the current directory.
 
 Make sure to implement the required functions in the `custom_logic.py` file and the `import_geo.py` plugin script according to your specific data loading and processing requirements.
 
-Note: The provided code assumes the existence of certain functions and files. Make sure to create and implement them based on your specific needs.
+Using a Makefile provides a convenient way to automate the execution of the Python script with the specified YAML file. It allows you to define targets and dependencies, making it easier to manage and run your data loading process.​​​​​​​​​​​​​​​​
