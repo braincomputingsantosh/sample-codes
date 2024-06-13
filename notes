@@ -1,48 +1,29 @@
-Here's a simple outline of the workflow:
-
-```
-+------------------------+
-|  data_load_acs_data.yaml  |
-+------------------------+
-            |
-            |
-            v
-+------------------------+
-|      Makefile          |
-+------------------------+
-            |
-            |
-            v
-+------------------------+
-|   load_acs_data.py     |
-+------------------------+
-            |
-            |
-            v
-+------------------------+
-|    custom_logic.py     |
-+------------------------+
-            |
-            |
-            v
-+------------------------+
-|   plugin_scripts/      |
-|     import_geo.py      |
-+------------------------+
-```
-
-The workflow can be described as follows:
-
-1. The `data_load_acs_data.yaml` file contains the configuration settings for loading and processing the ACS data.
-
-2. The `Makefile` is created to automate the execution of the Python script `load_acs_data.py` with the specified YAML file.
-
-3. The `load_acs_data.py` script is responsible for loading the YAML file, parsing its contents, and executing the defined loading and processing steps.
-
-4. The `custom_logic.py` file contains the implementation of the `log_file_size()` and `generate_checksum()` functions, which are referenced in the YAML file and used by the `load_acs_data.py` script.
-
-5. The `plugin_scripts` directory contains the `import_geo.py` file, which implements the `import_geo()` function referenced in the YAML file and used by the `load_acs_data.py` script.
-
-The workflow starts with the `data_load_acs_data.yaml` file, which is used by the `Makefile` to trigger the execution of the `load_acs_data.py` script. The script loads the YAML file, parses its contents, and executes the defined loading and processing steps. It utilizes the functions implemented in the `custom_logic.py` file and the `import_geo.py` plugin script based on the configuration specified in the YAML file.
-
-I hope this textual representation helps clarify the workflow. Let me know if you have any further questions!
+WITH table_modification_times AS (
+    SELECT 
+        schemaname,
+        relname AS table_name,
+        pg_stat_get_last_vacuum_time(c.oid) AS last_vacuum_time,
+        pg_stat_get_last_analyze_time(c.oid) AS last_analyze_time,
+        pg_stat_get_last_auto_vacuum_time(c.oid) AS last_auto_vacuum_time,
+        pg_stat_get_last_auto_analyze_time(c.oid) AS last_auto_analyze_time,
+        greatest(
+            pg_stat_get_last_vacuum_time(c.oid),
+            pg_stat_get_last_analyze_time(c.oid),
+            pg_stat_get_last_auto_vacuum_time(c.oid),
+            pg_stat_get_last_auto_analyze_time(c.oid)
+        ) AS last_modification_time
+    FROM 
+        pg_class c
+    JOIN 
+        pg_namespace n ON n.oid = c.relnamespace
+    WHERE 
+        c.relkind = 'r' 
+        AND n.nspname = 'your_schema_name' -- Replace with your schema name
+)
+SELECT 
+    schemaname,
+    max(last_modification_time) AS last_modification_time
+FROM 
+    table_modification_times
+GROUP BY 
+    schemaname;
