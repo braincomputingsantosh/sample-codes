@@ -1,23 +1,22 @@
 WITH table_modification_times AS (
-    SELECT 
-        n.nspname AS schemaname,
-        c.relname AS tablename,
+    SELECT
+        schemaname,
+        relname AS tablename,
         greatest(
-            pg_xact_commit_timestamp(xmin),
-            pg_xact_commit_timestamp(COALESCE(c.relfrozenxid, c.relfrozenxid))
+            last_vacuum, 
+            last_autovacuum, 
+            last_analyze, 
+            last_autoanalyze
         ) AS last_modification_time
-    FROM 
-        pg_class c
-    JOIN 
-        pg_namespace n ON n.oid = c.relnamespace
-    WHERE 
-        c.relkind = 'r' -- Only consider regular tables
-        AND n.nspname = 'your_schema_name' -- Replace with your schema name
+    FROM
+        pg_stat_all_tables
+    WHERE
+        schemaname = 'your_schema_name' -- Replace with your schema name
 )
-SELECT 
+SELECT
     schemaname,
     max(last_modification_time) AS last_modification_time
-FROM 
+FROM
     table_modification_times
-GROUP BY 
+GROUP BY
     schemaname;
