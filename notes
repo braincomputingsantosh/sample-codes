@@ -1,21 +1,36 @@
+It imports necessary modules for logging, file operations, and database interactions.
+It sets up logging at the DEBUG level.
+The custom_logic function:
+
+Processes input from a database connection (db), a file of interest (foi), and a dataframe (df).
+Extracts metadata like table name, schema, and file paths.
+Calculates the file size and converts it to megabytes.
+Logs the file size.
+Updates a database table with the file size using a custom SQL query.
+Raises an error if no rows were updated.
 
 
-It sets up logging and imports necessary modules for database operations, file management, and migration utilities.
-The custom_logic function is the core of the processing:
+The process function:
 
-It takes a database connection (db), a file of interest (foi), and a dataframe (df) as inputs.
-It extracts metadata from these inputs, such as table name, schema, and file path.
-It checks if a checksum (CRC) already exists for a given file in the database.
-If the checksum doesn't exist, it generates a new one using migrate_utils.static_func.md5_file.
-It then updates the database with the new checksum using a custom SQL query.
-If the update affects no rows, it raises a ValueError.
+Acts as a wrapper for custom_logic.
+Performs input validation to ensure foi is an instance of FilesOfInterest and db is a database connection.
+Calls custom_logic with the validated inputs.
 
 
-The process function acts as a wrapper:
 
-It performs some input validation, ensuring foi is an instance of FilesOfInterest and db is a database connection.
-It then calls the custom_logic function with the validated inputs.
+Regarding running this in Databricks:
+Yes, you could potentially run this code in Databricks, but with some considerations:
 
+Databricks uses a distributed file system (DBFS), so the file path operations might need adjustment.
+The database connection (db) would need to be set up appropriately for your Databricks environment. Databricks supports various database connections, so you'd need to ensure it's compatible with the db_utils being used here.
+The custom modules like data_file_mgmt and migrate_utils would need to be available in your Databricks environment, either by installing them or including their code in your workspace.
+You might need to adjust the logging configuration to work with Databricks' logging system.
+The file size calculation might need modification if you're working with distributed files in Databricks.
 
-The code uses a custom SQL query (update_sql) for updating logging metadata, which is commented as being faster than using a framework wrapper.
-There's error handling and logging throughout the process to track the execution flow and any issues that arise.
+To run this in Databricks, you'd likely need to:
+
+Ensure all necessary libraries are installed.
+Adjust file paths to work with DBFS.
+Set up appropriate database connections.
+Possibly modify some functions to work in a distributed environment.
+Incorporate this into a larger Databricks notebook or job structure.
