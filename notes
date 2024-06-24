@@ -1,145 +1,21 @@
-import acs_data
-
-Class: sequence_cache
-
-Purpose: Caches sequence lookups for specific year and year_type combinations.
-
-Attributes:
-
-cols: Initially set to None
-rs: Initially set to None (likely stands for "result set")
-year: Initially set to None
-year_type: Initially set to None
-
-Methods:
-a. init(self, db, year, year_type):
-
-Initializes or updates the cache if the year or year_type has changed.
-Logs the caching process.
-Calls cache_seq(db) to populate the cache.
-
-b. cache_seq(self, db):
-
-Initializes self.rs as an empty dictionary.
-Executes a SQL query to select distinct tbl and seq from census.dd_seq table.
-Iterates through the query results:
-
-Initializes and updates prev_seq to track changes in seq.
-For each unique seq, creates a list in self.rs[seq] and appends tbl to it.
 
 
+It sets up logging and imports necessary modules for database operations, file management, and migration utilities.
+The custom_logic function is the core of the processing:
 
-c. get_cols(self, seq: int):
-
-Returns the cached columns for a given seq (sequence number).
-
-
-SQL Query:
-
-Selects distinct tbl and seq from census.dd_seq table.
-Filters where tbl is not 'edt_file_id' and year matches the instance's year.
-
-### custom_logic function
-
-Performs custom logic operations on file data, likely for data processing or validation.
-Parameters:
-
-db: Database connection or object
-foi: File Object Interface, containing metadata about the file
-df: Dataframe or data object
-logic_status: LogicState object to track the status of operations
-
-Key Operations:
-
-Extracts current file state from df
-Defines a file name pattern using regex
-Initializes rows_inserted counter
-Retrieves parent_file_id and file_size from logic_status
-Checks if file_size is 0, fails if true
-Constructs full_file_path
-Extracts metadata (table_name, target_schema, year, year_type, seq, basename) from file path and foi
-Initializes sequence cache and retrieves column data
-Sets up buffers (dff_buffer, dff_buffer_moe) and buffer_list_len
-Calculates col_count
-Constructs paths for 'e' and 'm' files
-
-Data Reading and Processing:
-
-Reads two CSV files ('e' and 'm') using pandas.read_csv()
-Options used: no header, low_memory=False, dtype=object, engine='c'
+It takes a database connection (db), a file of interest (foi), and a dataframe (df) as inputs.
+It extracts metadata from these inputs, such as table name, schema, and file path.
+It checks if a checksum (CRC) already exists for a given file in the database.
+If the checksum doesn't exist, it generates a new one using migrate_utils.static_func.md5_file.
+It then updates the database with the new checksum using a custom SQL query.
+If the update affects no rows, it raises a ValueError.
 
 
-Column Validation:
+The process function acts as a wrapper:
 
-Checks if the number of columns in the dataframe matches the expected count
-If mismatched, logs an error and fails the operation
-If matched, sets the column names for both dataframes (dff and dff_moe)
-
-
-Data Manipulation:
-
-Applies year_type to both dataframes
-Sets 'year' column in both dataframes
-Drops specified columns from both dataframes
+It performs some input validation, ensuring foi is an instance of FilesOfInterest and db is a database connection.
+It then calls the custom_logic function with the validated inputs.
 
 
-Data Buffering:
-
-Calculates original size of the dataframe
-Appends dataframes to respective buffers (dff_buffer and dff_buffer_moe)
-
-
-Buffer Processing:
-
-If buffer_list_len is 1, assigns the first element of buffers
-Else, likely performs concatenation (code partially visible)
-
-
-Data Transformation:
-
-Uses pandas.melt() to reshape dff_buffer and dff_buffer_moe
-Merges the melted dataframes (ee and ee_moe) using pandas.merge()
-
-
-Buffer Reset:
-
-Clears dff_buffer and dff_buffer_moe
-Updates org_size with the length of ee_merged
-
-
-Data Cleaning:
-
-Removes rows with NaN values in both 'stat' and 'moe' columns
-Calculates number of dropped rows (nan_dropped)
-Logs a warning if any rows were dropped due to NaN values
-
-
-Database Operations:
-
-Attempts to bulk load the merged dataframe into the database
-Logs the number of rows inserted
-Sets status to 'PROCESSED' if successful
-
-
-Exception Handling:
-
-Catches any exceptions during the database operation
-Logs the exception
-Sets status to 'FAILED'
-Updates logic_status and current_file_state accordingly
-
-
-Database Update:
-
-If successful, updates the logging.meta_source_files table with the file process state
-
-
-Function Return:
-
-Returns the logic_status object
-
-
-Additional Function:
-
-Defines a process() function (implementation not fully visible)
-Asserts that foi is an instance of FOI
+The code uses a custom SQL query (update_sql) for updating logging metadata, which is commented as being faster than using a framework wrapper.
+There's error handling and logging throughout the process to track the execution flow and any issues that arise.
