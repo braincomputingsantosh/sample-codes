@@ -1,23 +1,15 @@
-CREATE OR REPLACE FUNCTION workday(start_date DATE, num_days INTEGER, holidays_table TEXT)
+CREATE OR REPLACE FUNCTION workday(start_date DATE, num_days INTEGER)
 RETURNS DATE AS $$
 DECLARE
     current_date DATE := start_date;
     days_added INTEGER := 0;
-    is_holiday BOOLEAN;
 BEGIN
     WHILE days_added < num_days LOOP
         current_date := current_date + 1;
         
-        -- Check if it's a weekend
+        -- Check if it's a weekday
         IF EXTRACT(DOW FROM current_date) NOT IN (0, 6) THEN
-            -- Check if it's a holiday
-            EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I WHERE date = $1)', holidays_table)
-            INTO is_holiday
-            USING current_date;
-            
-            IF NOT is_holiday THEN
-                days_added := days_added + 1;
-            END IF;
+            days_added := days_added + 1;
         END IF;
     END LOOP;
     
