@@ -3,12 +3,14 @@ RETURNS DATE AS $$
 DECLARE
     current_date DATE := start_date;
     days_added INTEGER := 0;
+    holidays DATE[] := ARRAY['2023-09-04', '2023-10-09', '2023-11-10', '2023-11-11', '2023-11-23', '2023-12-25'];
 BEGIN
     WHILE days_added < num_days LOOP
         current_date := current_date + 1;
         
-        -- Check if it's a weekday
-        IF EXTRACT(DOW FROM current_date) NOT IN (0, 6) THEN
+        -- Check if it's a weekday and not a holiday
+        IF EXTRACT(DOW FROM current_date) NOT IN (0, 6) AND 
+           NOT (current_date IN (SELECT unnest(holidays))) THEN
             days_added := days_added + 1;
         END IF;
     END LOOP;
