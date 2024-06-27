@@ -1,31 +1,26 @@
-CREATE OR REPLACE FUNCTION get_exam_gpra_data()
-RETURNS TABLE (
-    Event_ID INTEGER,
-    Entity TEXT,
-    Exam_Analysis_Finalized DATE,
-    Draft_to_Prudential DATE,
-    Draft_From_Prudential DATE,
-    GPRA_Due_Date DATE,
-    GPRA_Calculated_Date DATE
-) AS $$
+CREATE OR REPLACE FUNCTION workday(start_date DATE, num_days INTEGER, holidays_table TEXT)
+RETURNS DATE AS $$
+DECLARE
+    current_date DATE := start_date;
+    days_added INTEGER := 0;
+    is_holiday BOOLEAN;
 BEGIN
-    RETURN QUERY
-    SELECT 
-        e.Event_ID,
-        e.Entity,
-        e.Exam_Analysis_Finalized,
-        e.Draft_to_Prudential,
-        e.Draft_From_Prudential,
-        e.GPRA_Due_Date,
-        CASE
-            WHEN e.Exam_Analysis_Finalized IS NOT NULL AND e.Draft_to_Prudential IS NULL THEN
-                workday(e.Exam_Analysis_Finalized, 45, 'scv3_rtp.holidays')
-            WHEN e.Exam_Analysis_Finalized IS NOT NULL AND e.Draft_to_Prudential IS NOT NULL THEN
-                NULL
-            ELSE
-                NULL
-        END AS GPRA_Calculated_Date
-    FROM 
-        scv3_rtp.exams e;
+    WHILE days_added < num_days LOOP
+        current_date := current_date + 1;
+        
+        -- Check if it's a weekend
+        IF EXTRACT(DOW FROM current_date) NOT IN (0, 6) THEN
+            -- Check if it's a holiday
+            EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I WHERE date = $1)', holidays_table)
+            INTO is_holiday
+            USING current_date;
+            
+            IF NOT is_holiday THEN
+                days_added := days_added + 1;
+            END IF;
+        END IF;
+    END LOOP;
+    
+    RETURN current_date;
 END;
 $$ LANGUAGE plpgsql;
