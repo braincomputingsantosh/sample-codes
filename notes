@@ -1,24 +1,15 @@
-CREATE OR REPLACE FUNCTION calculate_gpra_date(
-    exam_analysis_finalized DATE,
-    draft_to_prudential DATE
-)
-RETURNS DATE AS $$
-DECLARE
-    result_date DATE;
+CREATE OR REPLACE PROCEDURE update_gpra_calculated_date()
+LANGUAGE plpgsql
+AS $$
 BEGIN
-    -- Check if Exam Analysis Finalized is not empty and Draft to Prudential is empty
-    IF exam_analysis_finalized IS NOT NULL AND draft_to_prudential IS NULL THEN
-        -- Use our workday function to add 45 workdays
-        result_date := workday(exam_analysis_finalized, 45);
-    -- Check if both Exam Analysis Finalized and Draft to Prudential are not empty
-    ELSIF exam_analysis_finalized IS NOT NULL AND draft_to_prudential IS NOT NULL THEN
-        -- Return NULL (empty string in Excel becomes NULL in PostgreSQL)
-        result_date := NULL;
-    ELSE
-        -- For any other case, return NULL
-        result_date := NULL;
-    END IF;
+    -- Update the gpra_calculated_date column in the exams table
+    UPDATE exams
+    SET gpra_calculated_date = calculate_gpra_date(exam_analysis_finalized, draft_to_prudential);
 
-    RETURN result_date;
+    -- Commit the transaction
+    COMMIT;
+
+    -- Output the number of rows updated
+    RAISE NOTICE 'Updated % rows in the exams table', ROW_COUNT();
 END;
-$$ LANGUAGE plpgsql;
+$$;
