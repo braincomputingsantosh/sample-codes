@@ -1,25 +1,31 @@
-The code as shown is not directly Databricks-ready, but it could be adapted to run in Databricks with some modifications. Here are the key points to consider:
-
-1. Imports: Databricks comes with many libraries pre-installed, including pandas and numpy. However, custom modules like `py_dbutils` might need to be installed or replaced with Databricks-specific alternatives.
-
-2. Database connections: The code uses a custom database utility (`db_utils`). In Databricks, you would typically use Spark SQL or the Databricks SQL connector.
-
-3. File system operations: The code uses `os.path` for file operations. In Databricks, you'd need to use the Databricks File System (DBFS) APIs.
-
-4. Logging: While Databricks supports Python's logging module, you might want to use Databricks' native logging capabilities for better integration.
-
-5. DataFrame operations: The code uses pandas. While pandas can run in Databricks, it's often more efficient to use Spark DataFrames for large-scale data processing.
-
-6. Table creation and data loading: The `create_table_from_dataframe` and `bulk_load_dataframe` methods would need to be replaced with Spark SQL operations.
-
-7. Error handling: The error handling approach might need adjustment to work well with Databricks' notebook environment.
-
-To make this code Databricks-ready, you would need to:
-1. Adjust imports and replace custom modules with Databricks equivalents.
-2. Use Spark SQL for database operations.
-3. Replace file system operations with DBFS operations.
-4. Consider converting pandas operations to Spark DataFrame operations for better scalability.
-5. Modify logging to use Databricks' display() function or other Databricks-specific logging methods.
-6. Adjust the overall structure to fit within a Databricks notebook or job.
-
-With these changes, the core logic of the code could be preserved while leveraging Databricks' distributed computing capabilities.
+CREATE OR REPLACE FUNCTION get_exam_gpra_data()
+RETURNS TABLE (
+    Event_ID INTEGER,
+    Entity TEXT,
+    Exam_Analysis_Finalized DATE,
+    Draft_to_Prudential DATE,
+    Draft_From_Prudential DATE,
+    GPRA_Due_Date DATE,
+    GPRA_Calculated_Date DATE
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        e.Event_ID,
+        e.Entity,
+        e.Exam_Analysis_Finalized,
+        e.Draft_to_Prudential,
+        e.Draft_From_Prudential,
+        e.GPRA_Due_Date,
+        CASE
+            WHEN e.Exam_Analysis_Finalized IS NOT NULL AND e.Draft_to_Prudential IS NULL THEN
+                workday(e.Exam_Analysis_Finalized, 45, 'scv3_rtp.holidays')
+            WHEN e.Exam_Analysis_Finalized IS NOT NULL AND e.Draft_to_Prudential IS NOT NULL THEN
+                NULL
+            ELSE
+                NULL
+        END AS GPRA_Calculated_Date
+    FROM 
+        scv3_rtp.exams e;
+END;
+$$ LANGUAGE plpgsql;
