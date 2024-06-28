@@ -1,15 +1,15 @@
-## GPRA Date Calculation
+CREATE OR REPLACE PROCEDURE update_gpra_calculated_date()
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    -- Update the gpra_calculated_date column in the exams table
+    UPDATE exams
+    SET gpra_calculated_date = calculate_gpra_date(exam_analysis_finalized, draft_to_prudential);
 
-The GPRA (Government Performance and Results Act) date calculation is a crucial component in our examination process tracking system. It serves to:
+    -- Commit the transaction
+    COMMIT;
 
-1. Automate the determination of key deadline dates for examination reports.
-2. Ensure compliance with regulatory timeframes for report submissions.
-3. Account for workdays, excluding weekends and holidays, in the calculation.
-
-The calculation logic:
-- Starts from the 'Exam Analysis Finalized' date.
-- Adds 45 workdays if no 'Draft to Prudential' date is set.
-- Considers weekends and holidays as non-workdays.
-- Resets to null if both 'Exam Analysis Finalized' and 'Draft to Prudential' dates are set.
-
-This automated process enhances accuracy in deadline tracking, supports efficient workflow management, and aids in maintaining regulatory compliance in our examination procedures.
+    -- Output the number of rows updated
+    RAISE NOTICE 'Updated % rows in the exams table', ROW_COUNT();
+END;
+$$;
