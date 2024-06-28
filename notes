@@ -1,15 +1,7 @@
-CREATE OR REPLACE PROCEDURE update_gpra_calculated_date()
-LANGUAGE plpgsql
-AS $$
-BEGIN
-    -- Update the gpra_calculated_date column in the exams table
-    UPDATE exams
-    SET gpra_calculated_date = calculate_gpra_date(exam_analysis_finalized, draft_to_prudential);
-
-    -- Commit the transaction
-    COMMIT;
-
-    -- Output the number of rows updated
-    RAISE NOTICE 'Updated % rows in the exams table', ROW_COUNT();
-END;
-$$;
+Function Definition: The function calculate_gpra_date takes two dates as input parameters: exam_analysis_finalized and draft_to_prudential.
+Variable Declaration: A variable result_date is declared to store the result.
+Conditional Logic:
+If exam_analysis_finalized is not null and draft_to_prudential is null, the function calculates the workday 45 days after exam_analysis_finalized using the previously defined workday function.
+If both exam_analysis_finalized and draft_to_prudential are not null, the function returns NULL.
+If exam_analysis_finalized is null, the function also returns NULL.
+Return Statement: The function returns the calculated result_date.
