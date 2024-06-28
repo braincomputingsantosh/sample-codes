@@ -1,7 +1,3 @@
-Function Definition: The function calculate_gpra_date takes two dates as input parameters: exam_analysis_finalized and draft_to_prudential.
-Variable Declaration: A variable result_date is declared to store the result.
-Conditional Logic:
-If exam_analysis_finalized is not null and draft_to_prudential is null, the function calculates the workday 45 days after exam_analysis_finalized using the previously defined workday function.
-If both exam_analysis_finalized and draft_to_prudential are not null, the function returns NULL.
-If exam_analysis_finalized is null, the function also returns NULL.
-Return Statement: The function returns the calculated result_date.
+SELECT calculate_gpra_date('2024-07-01', NULL); -- Should return the workday 45 days after 2024-07-01
+SELECT calculate_gpra_date('2024-07-01', '2024-08-01'); -- Should return NULL
+SELECT calculate_gpra_date(NULL, NULL); -- Should return NULL
