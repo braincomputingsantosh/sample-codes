@@ -1,3 +1,19 @@
-SELECT calculate_gpra_date('2024-07-01', NULL); -- Should return the workday 45 days after 2024-07-01
-SELECT calculate_gpra_date('2024-07-01', '2024-08-01'); -- Should return NULL
-SELECT calculate_gpra_date(NULL, NULL); -- Should return NULL
+Here's a documentation of the key parts of the Python script related to aborting if a duplicate file is found:
+
+1. The script defines a `custom_logic` function that checks if a file has already been processed.
+
+2. It queries a database table (likely `logging.meta_source_files`) to check if a file with matching criteria already exists and has been processed.
+
+3. If a matching processed file is found, the `already_processed` flag is set to True.
+
+4. When `already_processed` is True, the function:
+   - Logs an error message: "Duplicate File Found"
+   - Sets `continue_processing` to False
+
+5. The function returns `continue_processing`, which will be False if a duplicate is found, likely causing the calling code to abort further processing.
+
+6. There's a commented out line to raise an exception, which could be uncommented to forcefully abort the process instead of just returning a flag.
+
+This approach allows the script to detect duplicate files and prevent their reprocessing, helping to maintain data integrity and avoid redundant operations.
+
+Would you like me to explain any part of this code in more detail?
