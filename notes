@@ -51,5 +51,70 @@ This document evaluates the compatibility and usefulness of the custom_logic pac
 Conclusion
 Based on the documentation and assessments provided, this README offers insights into whether the custom_logic package is a beneficial tool for enhancing productivity in Databricks.
 
+extract_compressed file:
+
+This code appears to be part of a data processing pipeline, likely for extracting and handling compressed files. Here's a brief documentation of the main components:
+
+1. Import statements: Various modules are imported, including os, db, db_utils, data_file_mgnt, db_table, zip_utils.
+
+2. custom_logic function:
+   - Processes file information
+   - Sets up file paths and parameters for extraction
+
+3. File extraction logic:
+   - Retrieves file metadata from a database
+   - Handles CRC (Cyclic Redundancy Check) information
+   - Unzips files using zip_utils
+
+4. Error handling:
+   - Logs warnings if CRC column is missing
+   - Catches exceptions during file processing
+
+5. File tracking:
+   - Counts total files extracted
+   - Commits changes to the database session
+
+6. Further processing:
+   - Walks through extracted files
+   - Prepares for additional data file management
+
+7. Exception handling:
+   - Catches and logs errors during the overall process
+   - Sets status flags for failed operations
+
+Regarding necessity in Databricks:
+
+This code may not be entirely necessary in a Databricks environment for several reasons:
+
+1. File handling: Databricks provides built-in functions for handling various file formats, including compressed files, without needing custom unzipping logic.
+
+2. Database interactions: Databricks has its own optimized ways of interacting with data, often not requiring low-level database operations as seen in this code.
+
+3. Logging and error handling: Databricks offers integrated logging and monitoring capabilities that might be more suitable than the custom logging implemented here.
+
+4. Data processing: Databricks is designed for distributed data processing, which this code doesn't seem to leverage fully.
+
+5. File system operations: The code uses os.path for file system operations, but Databricks typically uses distributed file systems like DBFS, which have their own APIs.
+
+While parts of this logic might still be useful, it would likely need significant adaptation to fully leverage Databricks' capabilities and best practices. The exact necessity would depend on the specific requirements of your Databricks project and whether similar functionality is already available through Databricks' native features.
+
+generate_checksum
+
+Based on the additional context provided in this image, this code appears to be a custom implementation for generating and managing checksums for files. While it may serve a specific purpose in the current system, it's not strictly necessary in a typical Databricks environment for the following reasons:
+
+1. Built-in functionality: Databricks often has built-in methods for data integrity checks and file management that could potentially replace this custom solution.
+
+2. Different paradigm: Databricks operates on a distributed computing model, which may not require file-level checksums in the same way as traditional systems.
+
+3. Alternative approaches: Databricks provides other mechanisms for ensuring data integrity and tracking changes, such as Delta Lake, which offers features like ACID transactions and time travel.
+
+4. Performance considerations: The comment suggests this custom SQL approach is used for speed, but Databricks has its own optimized methods for handling large-scale data operations.
+
+5. Integration: This code seems tightly coupled with a specific database schema and file system structure, which may not align with Databricks' typical usage patterns.
+
+However, the necessity of this code ultimately depends on your specific use case and requirements. If you have unique compliance needs, specific file handling requirements, or are migrating an existing system to Databricks, you might need to retain or adapt parts of this functionality.
+
+For a Databricks implementation, you'd typically want to leverage Databricks' native features and best practices, which could involve refactoring this logic to use Databricks APIs, Delta Lake, or other platform-specific capabilities.
+
 
 
