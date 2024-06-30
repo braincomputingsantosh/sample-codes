@@ -33,3 +33,23 @@ The team prefers fine-grained control over the duplicate checking and error hand
 It's integrating with external systems or databases not native to Databricks.
 
 To fully leverage Databricks' capabilities, you might consider refactoring this logic to use Databricks' native features where possible. This could improve performance and reduce maintenance overhead.
+
+
+
+Overview
+The custom_logic Python package is designed to support Data Architects by streamlining various data processing tasks. This document serves as an assessment of the package's necessity and effectiveness within the Databricks environment.
+
+Purpose
+The custom_logic package contains a set of custom functions tailored for specific data processing needs. Each function is well-documented within the Python script, providing clarity on usage and functionality. This README aims to evaluate whether the package is a suitable and valuable addition to the Databricks platform.
+
+Documentation
+All code is thoroughly documented in the Python scripts, detailing the inputs, outputs, and examples for each function. This ensures that users can easily understand and implement the package within their workflows.
+
+Assessment for Databricks
+This document evaluates the compatibility and usefulness of the custom_logic package in Databricks. It includes considerations of integration, performance, and how well it addresses the needs of Data Architects in a cloud-based data processing environment.
+
+Conclusion
+Based on the documentation and assessments provided, this README offers insights into whether the custom_logic package is a beneficial tool for enhancing productivity in Databricks.
+
+
+
