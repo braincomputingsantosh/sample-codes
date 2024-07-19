@@ -88,3 +88,37 @@ mount_point = "/mnt/your-s3-mount"
 file_path = "path/to/your/file.txt"
 
 check_file_in_s3(mount_point, file_path)
+
+
+import zipfile
+import io
+from pyspark.dbutils import DBUtils
+
+def check_and_unzip_file(volume_path, zip_file_name, extract_path):
+    dbutils = DBUtils()
+    full_zip_path = f"{volume_path}/{zip_file_name}"
+    
+    # Check if the file exists
+    if dbutils.fs.ls(full_zip_path):
+        print(f"The file '{zip_file_name}' exists in the volume at '{volume_path}'.")
+        
+        # Read the zip file
+        with io.BytesIO(dbutils.fs.read(full_zip_path, -1)) as zip_buffer:
+            # Open the zip file
+            with zipfile.ZipFile(zip_buffer) as zip_ref:
+                # Extract all contents
+                for file in zip_ref.namelist():
+                    content = zip_ref.read(file)
+                    extract_file_path = f"{extract_path}/{file}"
+                    dbutils.fs.put(extract_file_path, content, overwrite=True)
+        
+        print(f"Successfully unzipped '{zip_file_name}' to '{extract_path}'.")
+    else:
+        print(f"The file '{zip_file_name}' does not exist in the volume at '{volume_path}'.")
+
+# Example usage
+volume_path = "/Volumes/staging/bk_hpi_raw/hpi_landing"
+zip_file_name = "your_zip_file.zip"
+extract_path = "/Volumes/staging/bk_hpi_raw/hpi_extracted"
+
+check_and_unzip_file(volume_path, zip_file_name, extract_path)
