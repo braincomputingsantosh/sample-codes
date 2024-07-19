@@ -1,8 +1,6 @@
 from pyspark.dbutils import DBUtils
 import zipfile
 from io import BytesIO
-from pyspark.sql.functions import col, input_file_name
-from pyspark.sql.types import BinaryType
 
 def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     dbutils = DBUtils(spark)
@@ -12,27 +10,17 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     if len(dbutils.fs.ls(full_zip_path)) > 0:
         print(f"The file '{zip_file_name}' exists in the S3 bucket at '{s3_bucket_path}'.")
         
-        # Create a Hadoop Configuration
-        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
-        
-        # Create a Hadoop FileSystem object
-        fs = spark.sparkContext._jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
-        
-        # Open the file
-        path = spark.sparkContext._jvm.org.apache.hadoop.fs.Path(full_zip_path)
-        input_stream = fs.open(path)
-        
         # Read the zip file in chunks
         chunk_size = 1024 * 1024  # 1MB chunks
         zip_content = BytesIO()
-        try:
-            while True:
-                chunk = input_stream.read(chunk_size)
-                if not chunk:
-                    break
-                zip_content.write(chunk)
-        finally:
-            input_stream.close()
+        offset = 0
+        
+        while True:
+            chunk = dbutils.fs.read(full_zip_path, offset, chunk_size)
+            if not chunk:
+                break
+            zip_content.write(chunk.encode('utf-8'))
+            offset += chunk_size
         
         zip_content.seek(0)
         
