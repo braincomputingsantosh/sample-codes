@@ -30,12 +30,13 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
                     result.append((f"{extract_path}/{file}", extracted_content))
             return result
 
-        # Apply UDF and explode the result
-        extracted_files_df = df.select(process_zip_content("content").alias("extracted_files")).select("extracted_files.*")
+        # Apply UDF
+        extracted_files_df = df.withColumn("extracted_files", process_zip_content("content"))
 
-        # Write extracted files
+        # Collect the results and write files
         for row in extracted_files_df.collect():
-            dbutils.fs.put(row[0], row[1], overwrite=True)
+            for file_path, content in row.extracted_files:
+                dbutils.fs.put(file_path, content, overwrite=True)
         
         print(f"Successfully unzipped '{zip_file_name}' to '{extract_path}'.")
     else:
