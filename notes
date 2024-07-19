@@ -1,3 +1,5 @@
+from pyspark.sql.functions import col, input_file_name
+from pyspark.sql.types import BinaryType
 import zipfile
 from io import BytesIO
 
@@ -8,16 +10,29 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     if len(dbutils.fs.ls(full_zip_path)) > 0:
         print(f"The file '{zip_file_name}' exists in the S3 bucket at '{s3_bucket_path}'.")
         
-        # Read the file content
-        file_content = spark.read.format("binaryFile").load(full_zip_path).select("content").first()[0]
-        
-        # Process the zip file
-        with zipfile.ZipFile(BytesIO(file_content)) as zip_ref:
-            # Extract all contents
-            for file in zip_ref.namelist():
-                content = zip_ref.read(file)
-                extract_file_path = f"{extract_path}/{file}"
-                dbutils.fs.put(extract_file_path, content, overwrite=True)
+        # Read the file in chunks
+        df = (spark.read.format("binaryFile")
+              .option("pathGlobFilter", zip_file_name)
+              .load(s3_bucket_path)
+              .select(col("content"), input_file_name().alias("file_name")))
+
+        # Process the zip file in chunks
+        def process_zip_chunk(iterator):
+            zip_content = BytesIO()
+            for row in iterator:
+                zip_content.write(row.content)
+            
+            zip_content.seek(0)
+            with zipfile.ZipFile(zip_content) as zip_ref:
+                for file in zip_ref.namelist():
+                    content = zip_ref.read(file)
+                    extract_file_path = f"{extract_path}/{file}"
+                    yield (extract_file_path, content)
+
+        # Extract files
+        extracted_files = df.rdd.mapPartitions(process_zip_chunk)
+        for file_path, content in extracted_files.collect():
+            dbutils.fs.put(file_path, content, overwrite=True)
         
         print(f"Successfully unzipped '{zip_file_name}' to '{extract_path}'.")
     else:
@@ -25,7 +40,7 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
 
 # Example usage
 s3_bucket_path = "s3a://your-bucket-name/your/path"
-zip_file_name = "your_zip_file.zip"
+zip_file_name = "your_large_zip_file.zip"
 extract_path = "s3a://your-bucket-name/your/extract/path"
 
 check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path)
