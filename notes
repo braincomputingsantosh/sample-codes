@@ -1,6 +1,8 @@
 from pyspark.dbutils import DBUtils
 import zipfile
-import io
+from io import BytesIO
+from pyspark.sql.functions import col, input_file_name
+from pyspark.sql.types import BinaryType
 
 def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     dbutils = DBUtils(spark)
@@ -10,11 +12,32 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     if len(dbutils.fs.ls(full_zip_path)) > 0:
         print(f"The file '{zip_file_name}' exists in the S3 bucket at '{s3_bucket_path}'.")
         
-        # Read the zip file using spark
-        zip_content = spark.read.format("binaryFile").load(full_zip_path).first().binary
+        # Create a Hadoop Configuration
+        hadoop_conf = spark.sparkContext._jsc.hadoopConfiguration()
+        
+        # Create a Hadoop FileSystem object
+        fs = spark.sparkContext._jvm.org.apache.hadoop.fs.FileSystem.get(hadoop_conf)
+        
+        # Open the file
+        path = spark.sparkContext._jvm.org.apache.hadoop.fs.Path(full_zip_path)
+        input_stream = fs.open(path)
+        
+        # Read the zip file in chunks
+        chunk_size = 1024 * 1024  # 1MB chunks
+        zip_content = BytesIO()
+        try:
+            while True:
+                chunk = input_stream.read(chunk_size)
+                if not chunk:
+                    break
+                zip_content.write(chunk)
+        finally:
+            input_stream.close()
+        
+        zip_content.seek(0)
         
         # Process the zip file
-        with zipfile.ZipFile(io.BytesIO(zip_content)) as zip_ref:
+        with zipfile.ZipFile(zip_content) as zip_ref:
             # Extract all contents
             for file in zip_ref.namelist():
                 content = zip_ref.read(file)
@@ -27,7 +50,7 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
 
 # Example usage
 s3_bucket_path = "s3a://your-bucket-name/your/path"
-zip_file_name = "your_zip_file.zip"
+zip_file_name = "your_large_zip_file.zip"
 extract_path = "s3a://your-bucket-name/your/extract/path"
 
 check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path)
