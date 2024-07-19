@@ -1,44 +1,21 @@
-CREATE OR REPLACE FUNCTION sv3_rpt.workday(start_date DATE, num_days INTEGER)
-RETURNS DATE AS $$
-DECLARE
-  current_date DATE := start_date;
-  days_added INTEGER := 0;
-  is_business_day BIT := B'0';
-BEGIN
-  RAISE NOTICE 'Starting calculation from date: %', current_date;
-  
-  WHILE days_added < num_days LOOP
-    current_date := current_date + INTERVAL '1 day';
-    
-    -- Check if it's a business day
-    BEGIN
-      SELECT is_business INTO is_business_day
-      FROM sv3_res.date_dimension
-      WHERE date_value = current_date;
-      
-      IF NOT FOUND THEN
-        is_business_day := B'0'; -- Set to 0 if no data found
-      END IF;
-    EXCEPTION WHEN OTHERS THEN
-      is_business_day := B'0';
-    END;
-    
-    RAISE NOTICE 'Checking date: %, Is business day: %', current_date, is_business_day;
-    
-    -- If it's a business day, count it
-    IF is_business_day = B'1' THEN
-      days_added := days_added + 1;
-      RAISE NOTICE 'Counted as business day: %, Total business days added: %', current_date, days_added;
-    ELSE
-      RAISE NOTICE 'Skipping non-business day: %', current_date;
-    END IF;
-  END LOOP;
-  
-  RETURN current_date;
-END;
-$$ LANGUAGE plpgsql;
+import os
+from pyspark.dbutils import DBUtils
 
-ALTER FUNCTION sv3_rpt.workday(DATE, INTEGER)
-OWNER TO operational_dba;
+def check_file_in_volume(volume_name, file_path):
+    # Create a DBUtils object
+    dbutils = DBUtils()
+    
+    # Construct the full path to the file in the volume
+    full_path = f"/dbfs/mnt/{volume_name}/{file_path}"
+    
+    # Check if the file exists
+    if os.path.exists(full_path):
+        print(f"The file '{file_path}' exists in the volume '{volume_name}'.")
+    else:
+        print(f"The file '{file_path}' does not exist in the volume '{volume_name}'.")
 
-COMMIT;
+# Example usage
+volume_name = "your_volume_name"
+file_path = "path/to/your/file.txt"
+
+check_file_in_volume(volume_name, file_path)
