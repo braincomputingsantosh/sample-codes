@@ -1,4 +1,6 @@
 from pyspark.dbutils import DBUtils
+import zipfile
+import io
 
 def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     dbutils = DBUtils(spark)
@@ -8,8 +10,11 @@ def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
     if len(dbutils.fs.ls(full_zip_path)) > 0:
         print(f"The file '{zip_file_name}' exists in the S3 bucket at '{s3_bucket_path}'.")
         
-        # Read the zip file
-        with zipfile.ZipFile(io.BytesIO(dbutils.fs.read(full_zip_path))) as zip_ref:
+        # Read the zip file using spark
+        zip_content = spark.read.format("binaryFile").load(full_zip_path).first().binary
+        
+        # Process the zip file
+        with zipfile.ZipFile(io.BytesIO(zip_content)) as zip_ref:
             # Extract all contents
             for file in zip_ref.namelist():
                 content = zip_ref.read(file)
