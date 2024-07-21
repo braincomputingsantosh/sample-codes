@@ -1,10 +1,17 @@
 import sqlite3
 import csv
 import os
+import glob
 
-def create_table_if_not_exists(cursor):
+# Database setup
+def create_connection():
+    conn = sqlite3.connect('dc_census_sf1.db')
+    return conn
+
+def create_table(conn):
+    cursor = conn.cursor()
     cursor.execute('''
-    CREATE TABLE IF NOT EXISTS vasf1 (
+    CREATE TABLE IF NOT EXISTS dc_census_data (
         file_id INTEGER,
         year INTEGER,
         sftype TEXT,
@@ -13,58 +20,55 @@ def create_table_if_not_exists(cursor):
         segment INTEGER,
         logrecno INTEGER,
         tbl TEXT,
-        stat DECIMAL
+        stat REAL
     )
     ''')
+    conn.commit()
 
-def process_file(cursor, file_path):
+# Data processing
+def process_sf1_file(file_path, conn):
     with open(file_path, 'r') as file:
-        csv_reader = csv.reader(file)
-
-        insert_query = '''
-        INSERT INTO vasf1 (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        '''
-
-        for row in csv_reader:
-            if len(row) < 6:
-                print(f"Skipping row with insufficient data: {row}")
-                continue
-
+        reader = csv.reader(file)
+        cursor = conn.cursor()
+        
+        for row in reader:
+            # Assuming the SF1 file structure. Adjust indices if needed.
             sftype = row[0]
-            state = row[1]
+            state = 'DC'  # Since we're focusing on DC
             col1 = int(row[3])
             segment = int(row[4])
             logrecno = int(row[5])
             
-            file_id = 701701
-            year = 2010
-            tbl = None
-            stat = None
-
-            cursor.execute(insert_query, (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
+            # These values might need to be extracted from filename or other sources
+            file_id = 1  # You may want to generate this based on the file
+            year = 2010  # Assuming 2010 Census, change if different
+            
+            # Process the data columns (assuming they start from index 6)
+            for i, value in enumerate(row[6:], start=1):
+                tbl = f'SF1_{i:04d}'  # Creating a table name for each column
+                stat = float(value) if value.strip() else None
+                
+                cursor.execute('''
+                INSERT INTO dc_census_data 
+                (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
+        
+        conn.commit()
 
 def main():
-    conn = sqlite3.connect('VAsf1.db')
-    cursor = conn.cursor()
-
-    create_table_if_not_exists(cursor)
-
-    folder_path = 'path/to/your/sf1/files'  # Replace with your actual folder path
-
-    for filename in os.listdir(folder_path):
-        if filename.endswith('.sf1'):
-            file_path = os.path.join(folder_path, filename)
-            print(f"Processing file: {filename}")
-            try:
-                process_file(cursor, file_path)
-            except Exception as e:
-                print(f"Error processing file {filename}: {str(e)}")
-
-    conn.commit()
+    conn = create_connection()
+    create_table(conn)
+    
+    # Assuming SF1 files are in a directory named 'dc_sf1_data'
+    data_directory = 'dc_sf1_data'
+    
+    for file_path in glob.glob(os.path.join(data_directory, '*.sf1')):
+        print(f"Processing file: {file_path}")
+        process_sf1_file(file_path, conn)
+    
     conn.close()
-
-    print("Data ingestion complete for all files.")
+    print("Data processing complete.")
 
 if __name__ == "__main__":
     main()
