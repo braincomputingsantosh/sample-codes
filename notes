@@ -2,6 +2,7 @@ import sqlite3
 import csv
 import os
 import glob
+import chardet
 
 def create_connection():
     conn = sqlite3.connect('dc_census_sf1.db')
@@ -30,8 +31,14 @@ def safe_int(value, default=0):
     except (ValueError, TypeError):
         return default
 
+def detect_encoding(file_path):
+    with open(file_path, 'rb') as file:
+        raw_data = file.read()
+    return chardet.detect(raw_data)['encoding']
+
 def process_sf1_file(file_path, conn, file_id):
-    with open(file_path, 'r') as file:
+    encoding = detect_encoding(file_path)
+    with open(file_path, 'r', encoding=encoding, errors='replace') as file:
         reader = csv.reader(file)
         cursor = conn.cursor()
         
