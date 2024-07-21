@@ -15,14 +15,24 @@ def create_table(conn):
         year INTEGER,
         sftype TEXT,
         state TEXT,
-        col1 TEXT,
-        segment TEXT,
-        logrecno TEXT,
+        col1 INTEGER,
+        segment INTEGER,
+        logrecno INTEGER,
         tbl TEXT,
         stat REAL
     )
     ''')
     conn.commit()
+
+def find_logrecno_index(row):
+    # Attempt to find the index of logrecno by looking for an integer value
+    for i, value in enumerate(row):
+        try:
+            int(value)
+            return i
+        except ValueError:
+            continue
+    return None  # If no integer found, return None
 
 def process_sf1_file(file_path, conn):
     with open(file_path, 'r') as file:
@@ -30,28 +40,32 @@ def process_sf1_file(file_path, conn):
         cursor = conn.cursor()
         
         for row in reader:
-            if len(row) < 6:
-                print(f"Skipping row with insufficient data: {row}")
+            logrecno_index = find_logrecno_index(row)
+            if logrecno_index is None:
+                print(f"Skipping row, unable to find logrecno: {row}")
                 continue
 
             sftype = row[0]
             state = 'DC'  # Assuming we're focusing on DC
             
-            # Store these as text to avoid conversion issues
-            col1 = row[3] if len(row) > 3 else ''
-            segment = row[4] if len(row) > 4 else ''
-            logrecno = row[5] if len(row) > 5 else ''
-            
+            try:
+                col1 = int(row[3]) if len(row) > 3 else 0
+                segment = int(row[4]) if len(row) > 4 else 0
+                logrecno = int(row[logrecno_index])
+            except ValueError as e:
+                print(f"Error converting data in file {file_path}, row {reader.line_num}: {e}")
+                continue
+
             file_id = int(os.path.basename(file_path).split('.')[0])  # Using filename as file_id
             year = 2010  # Assuming 2010 Census, change if different
             
-            # Process the data columns (assuming they start from index 6)
-            for i, value in enumerate(row[6:], start=1):
+            # Process the data columns (starting after logrecno)
+            for i, value in enumerate(row[logrecno_index+1:], start=1):
                 tbl = f'SF1_{i:04d}'  # Creating a table name for each column
                 try:
                     stat = float(value) if value.strip() else None
                 except ValueError:
-                    print(f"Invalid numeric value in file {file_path}, row {reader.line_num}, column {i+6}: {value}")
+                    print(f"Invalid numeric value in file {file_path}, row {reader.line_num}, column {i+logrecno_index+1}: {value}")
                     stat = None
 
                 cursor.execute('''
