@@ -27,37 +27,40 @@ def process_file(cursor, file_path):
         '''
 
         for row in csv_reader:
-            sftype, state, _, col1, segment, logrecno = row
+            if len(row) < 6:
+                print(f"Skipping row with insufficient data: {row}")
+                continue
+
+            sftype = row[0]
+            state = row[1]
+            col1 = int(row[3])
+            segment = int(row[4])
+            logrecno = int(row[5])
+            
             file_id = 701701
             year = 2010
             tbl = None
             stat = None
 
-            col1 = int(col1)
-            segment = int(segment)
-            logrecno = int(logrecno)
-
             cursor.execute(insert_query, (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
 
 def main():
-    # Connect to SQLite database
     conn = sqlite3.connect('VAsf1.db')
     cursor = conn.cursor()
 
-    # Create table if it doesn't exist
     create_table_if_not_exists(cursor)
 
-    # Folder containing SF1 files
     folder_path = 'path/to/your/sf1/files'  # Replace with your actual folder path
 
-    # Iterate through all files in the folder
     for filename in os.listdir(folder_path):
         if filename.endswith('.sf1'):
             file_path = os.path.join(folder_path, filename)
             print(f"Processing file: {filename}")
-            process_file(cursor, file_path)
+            try:
+                process_file(cursor, file_path)
+            except Exception as e:
+                print(f"Error processing file {filename}: {str(e)}")
 
-    # Commit changes and close the connection
     conn.commit()
     conn.close()
 
