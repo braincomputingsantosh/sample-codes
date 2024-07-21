@@ -2,6 +2,7 @@ import sqlite3
 import csv
 import os
 import glob
+import re
 
 def create_connection():
     conn = sqlite3.connect('dc_census_sf1.db')
@@ -24,15 +25,13 @@ def create_table(conn):
     ''')
     conn.commit()
 
-def find_logrecno_index(row):
-    # Attempt to find the index of logrecno by looking for an integer value
-    for i, value in enumerate(row):
-        try:
-            int(value)
-            return i
-        except ValueError:
-            continue
-    return None  # If no integer found, return None
+def parse_logrecno(value):
+    # Extract state, logrecno, and year from the string
+    match = re.match(r'([a-z]{2})(\d{5})(\d{4})', value.lower())
+    if match:
+        state, logrecno, year = match.groups()
+        return state, int(logrecno), int(year)
+    return None, None, None
 
 def process_sf1_file(file_path, conn):
     with open(file_path, 'r') as file:
@@ -40,32 +39,33 @@ def process_sf1_file(file_path, conn):
         cursor = conn.cursor()
         
         for row in reader:
-            logrecno_index = find_logrecno_index(row)
-            if logrecno_index is None:
-                print(f"Skipping row, unable to find logrecno: {row}")
+            if len(row) < 6:
+                print(f"Skipping row with insufficient data: {row}")
                 continue
 
             sftype = row[0]
-            state = 'DC'  # Assuming we're focusing on DC
+            state, logrecno, year = parse_logrecno(row[5])
             
+            if state is None or logrecno is None or year is None:
+                print(f"Unable to parse logrecno in row: {row}")
+                continue
+
             try:
                 col1 = int(row[3]) if len(row) > 3 else 0
                 segment = int(row[4]) if len(row) > 4 else 0
-                logrecno = int(row[logrecno_index])
             except ValueError as e:
                 print(f"Error converting data in file {file_path}, row {reader.line_num}: {e}")
                 continue
 
             file_id = int(os.path.basename(file_path).split('.')[0])  # Using filename as file_id
-            year = 2010  # Assuming 2010 Census, change if different
             
-            # Process the data columns (starting after logrecno)
-            for i, value in enumerate(row[logrecno_index+1:], start=1):
+            # Process the data columns (starting from index 6)
+            for i, value in enumerate(row[6:], start=1):
                 tbl = f'SF1_{i:04d}'  # Creating a table name for each column
                 try:
                     stat = float(value) if value.strip() else None
                 except ValueError:
-                    print(f"Invalid numeric value in file {file_path}, row {reader.line_num}, column {i+logrecno_index+1}: {value}")
+                    print(f"Invalid numeric value in file {file_path}, row {reader.line_num}, column {i+6}: {value}")
                     stat = None
 
                 cursor.execute('''
