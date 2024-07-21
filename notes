@@ -1,53 +1,67 @@
 import sqlite3
 import csv
+import os
 
-# Connect to SQLite database (or create it if it doesn't exist)
-conn = sqlite3.connect('VAsf1.db')
-cursor = conn.cursor()
+def create_table_if_not_exists(cursor):
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS vasf1 (
+        file_id INTEGER,
+        year INTEGER,
+        sftype TEXT,
+        state TEXT,
+        col1 INTEGER,
+        segment INTEGER,
+        logrecno INTEGER,
+        tbl TEXT,
+        stat DECIMAL
+    )
+    ''')
 
-# Create the vasf1 table
-cursor.execute('''
-CREATE TABLE IF NOT EXISTS vasf1 (
-    file_id INTEGER,
-    year INTEGER,
-    sftype TEXT,
-    state TEXT,
-    col1 INTEGER,
-    segment INTEGER,
-    logrecno INTEGER,
-    tbl TEXT,
-    stat DECIMAL
-)
-''')
+def process_file(cursor, file_path):
+    with open(file_path, 'r') as file:
+        csv_reader = csv.reader(file)
 
-# Open and read the SF1 file
-with open('abc.sf1', 'r') as file:
-    csv_reader = csv.reader(file)
-    next(csv_reader)  # Skip the header row
+        insert_query = '''
+        INSERT INTO vasf1 (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        '''
 
-    # Prepare the insert statement
-    insert_query = '''
-    INSERT INTO vasf1 (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    '''
+        for row in csv_reader:
+            sftype, state, _, col1, segment, logrecno = row
+            file_id = 701701
+            year = 2010
+            tbl = None
+            stat = None
 
-    # Process each row and insert into the database
-    for row in csv_reader:
-        sftype, state, _, col1, segment, logrecno = row
-        file_id = 701701
-        year = 2010
-        tbl = None
-        stat = None
+            col1 = int(col1)
+            segment = int(segment)
+            logrecno = int(logrecno)
 
-        # Convert data types as needed
-        col1 = int(col1)
-        segment = int(segment)
-        logrecno = int(logrecno)
+            cursor.execute(insert_query, (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
 
-        cursor.execute(insert_query, (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
+def main():
+    # Connect to SQLite database
+    conn = sqlite3.connect('VAsf1.db')
+    cursor = conn.cursor()
 
-# Commit changes and close the connection
-conn.commit()
-conn.close()
+    # Create table if it doesn't exist
+    create_table_if_not_exists(cursor)
 
-print("Data ingestion complete.")
+    # Folder containing SF1 files
+    folder_path = 'path/to/your/sf1/files'  # Replace with your actual folder path
+
+    # Iterate through all files in the folder
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.sf1'):
+            file_path = os.path.join(folder_path, filename)
+            print(f"Processing file: {filename}")
+            process_file(cursor, file_path)
+
+    # Commit changes and close the connection
+    conn.commit()
+    conn.close()
+
+    print("Data ingestion complete for all files.")
+
+if __name__ == "__main__":
+    main()
