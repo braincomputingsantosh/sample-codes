@@ -3,7 +3,6 @@ import csv
 import os
 import glob
 
-# Database setup
 def create_connection():
     conn = sqlite3.connect('dc_census_sf1.db')
     return conn
@@ -16,38 +15,45 @@ def create_table(conn):
         year INTEGER,
         sftype TEXT,
         state TEXT,
-        col1 INTEGER,
-        segment INTEGER,
-        logrecno INTEGER,
+        col1 TEXT,
+        segment TEXT,
+        logrecno TEXT,
         tbl TEXT,
         stat REAL
     )
     ''')
     conn.commit()
 
-# Data processing
 def process_sf1_file(file_path, conn):
     with open(file_path, 'r') as file:
         reader = csv.reader(file)
         cursor = conn.cursor()
         
         for row in reader:
-            # Assuming the SF1 file structure. Adjust indices if needed.
+            if len(row) < 6:
+                print(f"Skipping row with insufficient data: {row}")
+                continue
+
             sftype = row[0]
-            state = 'DC'  # Since we're focusing on DC
-            col1 = int(row[3])
-            segment = int(row[4])
-            logrecno = int(row[5])
+            state = 'DC'  # Assuming we're focusing on DC
             
-            # These values might need to be extracted from filename or other sources
-            file_id = 1  # You may want to generate this based on the file
+            # Store these as text to avoid conversion issues
+            col1 = row[3] if len(row) > 3 else ''
+            segment = row[4] if len(row) > 4 else ''
+            logrecno = row[5] if len(row) > 5 else ''
+            
+            file_id = int(os.path.basename(file_path).split('.')[0])  # Using filename as file_id
             year = 2010  # Assuming 2010 Census, change if different
             
             # Process the data columns (assuming they start from index 6)
             for i, value in enumerate(row[6:], start=1):
                 tbl = f'SF1_{i:04d}'  # Creating a table name for each column
-                stat = float(value) if value.strip() else None
-                
+                try:
+                    stat = float(value) if value.strip() else None
+                except ValueError:
+                    print(f"Invalid numeric value in file {file_path}, row {reader.line_num}, column {i+6}: {value}")
+                    stat = None
+
                 cursor.execute('''
                 INSERT INTO dc_census_data 
                 (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
@@ -60,7 +66,6 @@ def main():
     conn = create_connection()
     create_table(conn)
     
-    # Assuming SF1 files are in a directory named 'dc_sf1_data'
     data_directory = 'dc_sf1_data'
     
     for file_path in glob.glob(os.path.join(data_directory, '*.sf1')):
