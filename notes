@@ -26,7 +26,7 @@ def create_table(conn):
     conn.commit()
 
 # Data processing
-def process_sf1_file(file_path, conn):
+def process_sf1_file(file_path, conn, file_id):
     with open(file_path, 'r') as file:
         reader = csv.reader(file)
         cursor = conn.cursor()
@@ -39,8 +39,6 @@ def process_sf1_file(file_path, conn):
             segment = int(row[4])
             logrecno = int(row[5])
             
-            # These values might need to be extracted from filename or other sources
-            file_id = 1  # You may want to generate this based on the file
             year = 2010  # Assuming 2010 Census, change if different
             
             # Process the data columns (assuming they start from index 6)
@@ -63,9 +61,12 @@ def main():
     # Assuming SF1 files are in a directory named 'dc_sf1_data'
     data_directory = 'dc_sf1_data'
     
+    file_id = 62541  # Starting file_id
+    
     for file_path in glob.glob(os.path.join(data_directory, '*.sf1')):
         print(f"Processing file: {file_path}")
-        process_sf1_file(file_path, conn)
+        process_sf1_file(file_path, conn, file_id)
+        file_id += 1  # Increment file_id for the next file
     
     conn.close()
     print("Data processing complete.")
