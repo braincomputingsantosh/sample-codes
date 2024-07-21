@@ -1,50 +1,53 @@
-from pyspark.sql.functions import col, input_file_name, udf
-from pyspark.sql.types import BinaryType, StringType, ArrayType, StructType, StructField
-import zipfile
-from io import BytesIO
+import sqlite3
+import csv
 
-def check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path):
-    full_zip_path = f"{s3_bucket_path}/{zip_file_name}"
-    
-    # Check if the file exists
-    if len(dbutils.fs.ls(full_zip_path)) > 0:
-        print(f"The file '{zip_file_name}' exists in the S3 bucket at '{s3_bucket_path}'.")
-        
-        # Read the file as a binary file
-        df = (spark.read.format("binaryFile")
-              .option("pathGlobFilter", zip_file_name)
-              .load(s3_bucket_path)
-              .select(col("content"), input_file_name().alias("file_name")))
+# Connect to SQLite database (or create it if it doesn't exist)
+conn = sqlite3.connect('VAsf1.db')
+cursor = conn.cursor()
 
-        # Define UDF to process zip content
-        @udf(returnType=ArrayType(StructType([
-            StructField("file_path", StringType()),
-            StructField("content", BinaryType())
-        ])))
-        def process_zip_content(content):
-            zip_content = BytesIO(content)
-            result = []
-            with zipfile.ZipFile(zip_content) as zip_ref:
-                for file in zip_ref.namelist():
-                    extracted_content = zip_ref.read(file)
-                    result.append((f"{extract_path}/{file}", extracted_content))
-            return result
+# Create the vasf1 table
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS vasf1 (
+    file_id INTEGER,
+    year INTEGER,
+    sftype TEXT,
+    state TEXT,
+    col1 INTEGER,
+    segment INTEGER,
+    logrecno INTEGER,
+    tbl TEXT,
+    stat DECIMAL
+)
+''')
 
-        # Apply UDF
-        extracted_files_df = df.withColumn("extracted_files", process_zip_content("content"))
+# Open and read the SF1 file
+with open('abc.sf1', 'r') as file:
+    csv_reader = csv.reader(file)
+    next(csv_reader)  # Skip the header row
 
-        # Collect the results and write files
-        for row in extracted_files_df.collect():
-            for file_path, content in row.extracted_files:
-                dbutils.fs.put(file_path, content, overwrite=True)
-        
-        print(f"Successfully unzipped '{zip_file_name}' to '{extract_path}'.")
-    else:
-        print(f"The file '{zip_file_name}' does not exist in the S3 bucket at '{s3_bucket_path}'.")
+    # Prepare the insert statement
+    insert_query = '''
+    INSERT INTO vasf1 (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    '''
 
-# Example usage
-s3_bucket_path = "s3a://your-bucket-name/your/path"
-zip_file_name = "your_large_zip_file.zip"
-extract_path = "s3a://your-bucket-name/your/extract/path"
+    # Process each row and insert into the database
+    for row in csv_reader:
+        sftype, state, _, col1, segment, logrecno = row
+        file_id = 701701
+        year = 2010
+        tbl = None
+        stat = None
 
-check_and_unzip_file(s3_bucket_path, zip_file_name, extract_path)
+        # Convert data types as needed
+        col1 = int(col1)
+        segment = int(segment)
+        logrecno = int(logrecno)
+
+        cursor.execute(insert_query, (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
+
+# Commit changes and close the connection
+conn.commit()
+conn.close()
+
+print("Data ingestion complete.")
