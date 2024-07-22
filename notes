@@ -1,28 +1,41 @@
-import sqlite3
+import psycopg2
 import csv
 import os
 import glob
+from psycopg2 import sql
 import chardet
+import logging
+from datetime import datetime
+
+# Set up logging
+log_filename = f"sf1_ingestion_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+logging.basicConfig(filename=log_filename, level=logging.ERROR,
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 
 def create_connection():
-    conn = sqlite3.connect('dc_census_sf1.db')
-    return conn
+    return psycopg2.connect(
+        dbname="your_database_name",
+        user="your_username",
+        password="your_password",
+        host="your_host",
+        port="your_port"
+    )
 
 def create_table(conn):
-    cursor = conn.cursor()
-    cursor.execute('''
-    CREATE TABLE IF NOT EXISTS dc_census_data (
-        file_id INTEGER,
-        year INTEGER,
-        sftype TEXT,
-        state TEXT,
-        col1 INTEGER,
-        segment INTEGER,
-        logrecno INTEGER,
-        tbl TEXT,
-        stat REAL
-    )
-    ''')
+    with conn.cursor() as cursor:
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS census.sf1 (
+            file_id INTEGER,
+            year INTEGER,
+            sftype TEXT,
+            state TEXT,
+            col1 INTEGER,
+            segment INTEGER,
+            logrecno INTEGER,
+            tbl TEXT,
+            stat REAL
+        )
+        ''')
     conn.commit()
 
 def safe_int(value, default=0):
@@ -37,40 +50,46 @@ def detect_encoding(file_path):
     return chardet.detect(raw_data)['encoding']
 
 def process_sf1_file(file_path, conn, file_id):
-    encoding = detect_encoding(file_path)
-    with open(file_path, 'r', encoding=encoding, errors='replace') as file:
-        reader = csv.reader(file)
-        cursor = conn.cursor()
-        
-        for row_num, row in enumerate(reader, start=1):
-            if len(row) < 6:
-                print(f"Skipping row {row_num} due to insufficient columns: {row}")
-                continue
-
-            sftype = row[0] if len(row) > 0 else ''
-            state = 'DC'  # Since we're focusing on DC
-            col1 = safe_int(row[3] if len(row) > 3 else 0)
-            segment = safe_int(row[4] if len(row) > 4 else 0)
-            logrecno = safe_int(row[5] if len(row) > 5 else 0)
-            
-            year = 2010  # Assuming 2010 Census, change if different
-            
-            # Process the data columns (assuming they start from index 6)
-            for i, value in enumerate(row[6:], start=1):
-                tbl = f'SF1_{i:04d}'  # Creating a table name for each column
-                try:
-                    stat = float(value) if value.strip() else None
-                except ValueError:
-                    print(f"Invalid numeric value in file {file_path}, row {row_num}, column {i+6}: {value}")
-                    stat = None
+    try:
+        encoding = detect_encoding(file_path)
+        with conn.cursor() as cursor:
+            with open(file_path, 'r', encoding=encoding, errors='replace') as file:
+                reader = csv.reader(file)
                 
-                cursor.execute('''
-                INSERT INTO dc_census_data 
-                (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
-        
-        conn.commit()
+                for row_num, row in enumerate(reader, start=1):
+                    if len(row) < 6:
+                        print(f"Skipping row {row_num} due to insufficient columns: {row}")
+                        continue
+
+                    sftype = row[0] if len(row) > 0 else ''
+                    state = 'DC'  # Since we're focusing on DC
+                    col1 = safe_int(row[3] if len(row) > 3 else 0)
+                    segment = safe_int(row[4] if len(row) > 4 else 0)
+                    logrecno = safe_int(row[5] if len(row) > 5 else 0)
+                    
+                    year = 2010  # Assuming 2010 Census, change if different
+                    
+                    # Process the data columns (assuming they start from index 6)
+                    for i, value in enumerate(row[6:], start=1):
+                        tbl = f'SF1_{i:04d}'  # Creating a table name for each column
+                        try:
+                            stat = float(value) if value.strip() else None
+                        except ValueError:
+                            print(f"Invalid numeric value in file {file_path}, row {row_num}, column {i+6}: {value}")
+                            stat = None
+                        
+                        cursor.execute('''
+                        INSERT INTO census.sf1 
+                        (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ''', (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
+            
+            conn.commit()
+        return True
+    except Exception as e:
+        logging.error(f"Error processing file {file_path}: {str(e)}")
+        conn.rollback()
+        return False
 
 def main():
     conn = create_connection()
@@ -79,14 +98,26 @@ def main():
     data_directory = 'dc_sf1_data'
     
     file_id = 62541  # Starting file_id
+    failed_files = []
     
     for file_path in glob.glob(os.path.join(data_directory, '*.sf1')):
         print(f"Processing file: {file_path}")
-        process_sf1_file(file_path, conn, file_id)
+        success = process_sf1_file(file_path, conn, file_id)
+        if not success:
+            failed_files.append(file_path)
         file_id += 1  # Increment file_id for the next file
     
     conn.close()
-    print("Data processing complete.")
+    
+    if failed_files:
+        print("The following files could not be ingested:")
+        for file in failed_files:
+            print(file)
+        logging.error(f"Failed to ingest the following files: {', '.join(failed_files)}")
+    else:
+        print("All files were successfully ingested.")
+    
+    print(f"Data ingestion complete. Check {log_filename} for error details.")
 
 if __name__ == "__main__":
     main()
