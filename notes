@@ -1,123 +1,69 @@
-import psycopg2
-import csv
-import os
-import glob
-from psycopg2 import sql
-import chardet
-import logging
-from datetime import datetime
+import geopandas as gpd
+import pandas as pd
+import folium
+from sqlalchemy import create_engine
 
-# Set up logging
-log_filename = f"sf1_ingestion_errors_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-logging.basicConfig(filename=log_filename, level=logging.ERROR,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+# Step 1: Load the shapefile
+gdf = gpd.read_file('path_to_your_shapefile.shp')
 
-def create_connection():
-    return psycopg2.connect(
-        dbname="your_database_name",
-        user="your_username",
-        password="your_password",
-        host="your_host",
-        port="your_port"
+# Step 2: Connect to the database and fetch SF1 data
+db_connection_string = "postgresql://username:password@host:port/database_name"
+engine = create_engine(db_connection_string)
+
+query = """
+    SELECT logrecno, some_numeric_column
+    FROM census.sf1
+    LIMIT 1000;  -- Adjust as needed
+"""
+sf1_data = pd.read_sql(query, engine)
+
+# Step 3: Join the shapefile with SF1 data
+# Assuming 'GEOID' in shapefile corresponds to 'logrecno' in SF1 data
+gdf = gdf.merge(sf1_data, left_on='GEOID', right_on='logrecno')
+
+# Step 4: Create a Folium map
+m = folium.Map(location=[gdf.geometry.centroid.y.mean(), gdf.geometry.centroid.x.mean()], 
+               zoom_start=10)
+
+# Step 5: Add choropleth layer
+folium.Choropleth(
+    geo_data=gdf,
+    name='choropleth',
+    data=gdf,
+    columns=['GEOID', 'some_numeric_column'],
+    key_on='feature.properties.GEOID',
+    fill_color='YlOrRd',
+    fill_opacity=0.7,
+    line_opacity=0.2,
+    legend_name='Some Numeric Column'
+).add_to(m)
+
+# Step 6: Add hover functionality
+style_function = lambda x: {'fillColor': '#ffffff', 
+                            'color':'#000000', 
+                            'fillOpacity': 0.1, 
+                            'weight': 0.1}
+highlight_function = lambda x: {'fillColor': '#000000', 
+                                'color':'#000000', 
+                                'fillOpacity': 0.50, 
+                                'weight': 0.1}
+NIL = folium.features.GeoJson(
+    gdf,
+    style_function=style_function, 
+    control=False,
+    highlight_function=highlight_function, 
+    tooltip=folium.features.GeoJsonTooltip(
+        fields=['GEOID', 'some_numeric_column'],
+        aliases=['GEOID:', 'Value:'],
+        style=("background-color: white; color: #333333; font-family: arial; font-size: 12px; padding: 10px;") 
     )
+)
+m.add_child(NIL)
+m.keep_in_front(NIL)
+folium.LayerControl().add_to(m)
 
-def create_table(conn):
-    with conn.cursor() as cursor:
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS census.sf1 (
-            file_id INTEGER,
-            year INTEGER,
-            sftype TEXT,
-            state TEXT,
-            col1 INTEGER,
-            segment INTEGER,
-            logrecno INTEGER,
-            tbl TEXT,
-            stat REAL
-        )
-        ''')
-    conn.commit()
+# Step 7: Save the map
+m.save('census_map.html')
 
-def safe_int(value, default=0):
-    try:
-        return int(value)
-    except (ValueError, TypeError):
-        return default
-
-def detect_encoding(file_path):
-    with open(file_path, 'rb') as file:
-        raw_data = file.read()
-    return chardet.detect(raw_data)['encoding']
-
-def process_sf1_file(file_path, conn, file_id):
-    try:
-        encoding = detect_encoding(file_path)
-        with conn.cursor() as cursor:
-            with open(file_path, 'r', encoding=encoding, errors='replace') as file:
-                reader = csv.reader(file)
-                
-                for row_num, row in enumerate(reader, start=1):
-                    if len(row) < 6:
-                        print(f"Skipping row {row_num} due to insufficient columns: {row}")
-                        continue
-
-                    sftype = row[0] if len(row) > 0 else ''
-                    state = 'DC'  # Since we're focusing on DC
-                    col1 = safe_int(row[3] if len(row) > 3 else 0)
-                    segment = safe_int(row[4] if len(row) > 4 else 0)
-                    logrecno = safe_int(row[5] if len(row) > 5 else 0)
-                    
-                    year = 2010  # Assuming 2010 Census, change if different
-                    
-                    # Process the data columns (assuming they start from index 6)
-                    for i, value in enumerate(row[6:], start=1):
-                        tbl = f'SF1_{i:04d}'  # Creating a table name for each column
-                        try:
-                            stat = float(value) if value.strip() else None
-                        except ValueError:
-                            print(f"Invalid numeric value in file {file_path}, row {row_num}, column {i+6}: {value}")
-                            stat = None
-                        
-                        cursor.execute('''
-                        INSERT INTO census.sf1 
-                        (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        ''', (file_id, year, sftype, state, col1, segment, logrecno, tbl, stat))
-            
-            conn.commit()
-        return True
-    except Exception as e:
-        logging.error(f"Error processing file {file_path}: {str(e)}")
-        conn.rollback()
-        return False
-
-def main():
-    conn = create_connection()
-    create_table(conn)
-    
-    data_directory = 'dc_sf1_data'
-    
-    file_id = 62541  # Starting file_id
-    failed_files = []
-    
-    for file_path in glob.glob(os.path.join(data_directory, '*.sf1')):
-        print(f"Processing file: {file_path}")
-        success = process_sf1_file(file_path, conn, file_id)
-        if not success:
-            failed_files.append(file_path)
-        file_id += 1  # Increment file_id for the next file
-    
-    conn.close()
-    
-    if failed_files:
-        print("The following files could not be ingested:")
-        for file in failed_files:
-            print(file)
-        logging.error(f"Failed to ingest the following files: {', '.join(failed_files)}")
-    else:
-        print("All files were successfully ingested.")
-    
-    print(f"Data ingestion complete. Check {log_filename} for error details.")
-
-if __name__ == "__main__":
-    main()
+# Close the database connection
+engine.dispose()
