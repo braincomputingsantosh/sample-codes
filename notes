@@ -1,44 +1,23 @@
-import geopandas as gpd
-import pandas as pd
 import folium
-from sqlalchemy import create_engine
 
-# Step 1: Load the shapefile
-gdf = gpd.read_file('path_to_your_shapefile.shp')
-
-# Step 2: Connect to the database and fetch SF1 data
-db_connection_string = "postgresql://username:password@host:port/database_name"
-engine = create_engine(db_connection_string)
-
-query = """
-    SELECT logrecno, some_numeric_column
-    FROM census.sf1
-    LIMIT 1000;  -- Adjust as needed
-"""
-sf1_data = pd.read_sql(query, engine)
-
-# Step 3: Join the shapefile with SF1 data
-# Assuming 'GEOID' in shapefile corresponds to 'logrecno' in SF1 data
-gdf = gdf.merge(sf1_data, left_on='GEOID', right_on='logrecno')
-
-# Step 4: Create a Folium map
+# Create a Folium map
 m = folium.Map(location=[gdf.geometry.centroid.y.mean(), gdf.geometry.centroid.x.mean()], 
                zoom_start=10)
 
-# Step 5: Add choropleth layer
+# Add choropleth layer
 folium.Choropleth(
-    geo_data=gdf,
+    geo_data=gdf.to_json(),
     name='choropleth',
     data=gdf,
-    columns=['GEOID', 'some_numeric_column'],
-    key_on='feature.properties.GEOID',
+    columns=[gdf.columns[0], 'some_numeric_column'],
+    key_on=f'feature.properties.{gdf.columns[0]}',
     fill_color='YlOrRd',
     fill_opacity=0.7,
     line_opacity=0.2,
     legend_name='Some Numeric Column'
 ).add_to(m)
 
-# Step 6: Add hover functionality
+# Add hover functionality
 style_function = lambda x: {'fillColor': '#ffffff', 
                             'color':'#000000', 
                             'fillOpacity': 0.1, 
@@ -53,8 +32,8 @@ NIL = folium.features.GeoJson(
     control=False,
     highlight_function=highlight_function, 
     tooltip=folium.features.GeoJsonTooltip(
-        fields=['GEOID', 'some_numeric_column'],
-        aliases=['GEOID:', 'Value:'],
+        fields=[gdf.columns[0], 'some_numeric_column'],
+        aliases=['ID:', 'Value:'],
         style=("background-color: white; color: #333333; font-family: arial; font-size: 12px; padding: 10px;") 
     )
 )
@@ -62,8 +41,5 @@ m.add_child(NIL)
 m.keep_in_front(NIL)
 folium.LayerControl().add_to(m)
 
-# Step 7: Save the map
+# Save the map
 m.save('census_map.html')
-
-# Close the database connection
-engine.dispose()
