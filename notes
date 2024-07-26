@@ -1,54 +1,13 @@
-import geopandas as gpd
-import pandas as pd
-from sqlalchemy import create_engine
-
-# Load the shapefile
-gdf = gpd.read_file('path_to_your_shapefile.shp')
-
-# Connect to the database and fetch SF1 data
-db_connection_string = "postgresql://username:password@host:port/database_name"
-engine = create_engine(db_connection_string)
-
-query = """
-    SELECT logrecno, some_numeric_column
-    FROM census.sf1
-    LIMIT 1000;  -- Adjust as needed
-"""
-sf1_data = pd.read_sql(query, engine)
-
-# Convert logrecno to string
-sf1_data['logrecno'] = sf1_data['logrecno'].astype(str)
-
-# Merge the data
-gdf = gdf.merge(sf1_data, left_on=gdf.columns[0], right_on='logrecno', how='inner')
-
-# Check for NaN values
-print("Columns with NaN values:")
-print(gdf.columns[gdf.isna().any()].tolist())
-
-# Print rows with NaN values
-print("\nRows with NaN values:")
-print(gdf[gdf.isna().any(axis=1)])
-
-# Check data types
-print("\nData types:")
-print(gdf.dtypes)
-
-# Print summary statistics
-print("\nSummary statistics:")
-print(gdf.describe())
-
-# Check for invalid geometries
-invalid_geoms = gdf[~gdf.geometry.is_valid]
-print(f"\nNumber of invalid geometries: {len(invalid_geoms)}")
-
-# Remove rows with NaN values and invalid geometries
-gdf = gdf.dropna().loc[gdf.geometry.is_valid]
-
-print("\nShape after cleaning:", gdf.shape)
-
-# If you still have data, continue with creating the map
-if len(gdf) > 0:
-    # Your mapping code here
-else:
-    print("No valid data remaining after cleaning.")
+SELECT pid, 
+       usename, 
+       application_name,
+       client_addr,
+       backend_start,
+       query_start,
+       state,
+       wait_event,
+       query
+FROM pg_stat_activity
+WHERE state != 'idle'
+AND pid != pg_backend_pid()
+ORDER BY query_start DESC;
