@@ -1,13 +1,28 @@
-SELECT pid, 
-       usename, 
-       application_name,
-       client_addr,
-       backend_start,
-       query_start,
-       state,
-       wait_event,
-       query
-FROM pg_stat_activity
-WHERE state != 'idle'
-AND pid != pg_backend_pid()
-ORDER BY query_start DESC;
+Subject: SF1 Data Loading Complete - Missing States Added and Geo Linkages Verified
+
+Dear Team,
+
+I'm pleased to report that we've made significant progress with our census data project:
+
+1. Missing States SF1 Data:
+   - We've successfully loaded the SF1 (Summary File 1) data for all previously missing states into our Citus prod database.
+   - This completes our SF1 dataset, ensuring comprehensive coverage across all U.S. states and territories.
+
+2. Geo Data Linkage Verification:
+   - We've thoroughly verified and validated the linkages between the SF1 data and the geographic data in the geo_sf1_2010 table.
+   - All SF1 records now correctly correspond to their respective geographic entities.
+
+Key Points:
+- The SF1 dataset is now complete and fully integrated.
+- Geographic linkages are accurate, allowing for precise spatial analysis and mapping.
+- Query performance has been tested and optimized for the expanded dataset.
+
+Next Steps:
+- Update any relevant documentation or data dictionaries to reflect the complete dataset.
+- Inform analytics teams that the full SF1 data is now available for use.
+- Schedule a brief meeting to discuss any questions or potential use cases for the complete dataset.
+
+If you have any questions or need further information about the data loading process or the linkage verification, please don't hesitate to ask.
+
+Best regards,
+[Your Name]
