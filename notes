@@ -1,28 +1,18 @@
-Subject: SF1 Data Loading Complete - Missing States Added and Geo Linkages Verified
-
-Dear Team,
-
-I'm pleased to report that we've made significant progress with our census data project:
-
-1. Missing States SF1 Data:
-   - We've successfully loaded the SF1 (Summary File 1) data for all previously missing states into our Citus prod database.
-   - This completes our SF1 dataset, ensuring comprehensive coverage across all U.S. states and territories.
-
-2. Geo Data Linkage Verification:
-   - We've thoroughly verified and validated the linkages between the SF1 data and the geographic data in the geo_sf1_2010 table.
-   - All SF1 records now correctly correspond to their respective geographic entities.
-
-Key Points:
-- The SF1 dataset is now complete and fully integrated.
-- Geographic linkages are accurate, allowing for precise spatial analysis and mapping.
-- Query performance has been tested and optimized for the expanded dataset.
-
-Next Steps:
-- Update any relevant documentation or data dictionaries to reflect the complete dataset.
-- Inform analytics teams that the full SF1 data is now available for use.
-- Schedule a brief meeting to discuss any questions or potential use cases for the complete dataset.
-
-If you have any questions or need further information about the data loading process or the linkage verification, please don't hesitate to ask.
-
-Best regards,
-[Your Name]
+WITH geo AS (
+  SELECT geoid, tract, county, state AS st_num, stusab AS state,
+         logrecno, year, sumlevel
+  FROM census.geo_sf_2010
+  WHERE sumlevel = 140
+),
+sf AS (
+  SELECT *
+  FROM census.sf1
+  WHERE tbl IN ('p1-0')
+)
+SELECT a.stat, a.logrecno, a.year, a.tbl, b.state, b.county, b.tract,
+       b.st_num, b.sumlevel
+FROM sf a
+INNER JOIN geo b
+  ON a.state = b.state
+  AND a.logrecno = b.logrecno
+  AND a.year = b.year;
