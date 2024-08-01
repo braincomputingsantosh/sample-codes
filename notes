@@ -80,3 +80,35 @@ Copy| geo_id | tbl     | stat |
 | 12345  | P001001 | 100  |
 | 12345  | P002001 | 50   |
 So, 'stat' in this case represents the actual census counts or values for each table (tbl) and geographic unit, reshaped into a long format for easier processing and database insertion.
+
+library(tidyverse)
+
+# Assuming your data frame is called 'chunk'
+# and 'pivot_columns' is a vector of column names to keep as identifiers
+
+chunk_pivoted <- chunk %>%
+  pivot_longer(
+    cols = -all_of(pivot_columns),
+    names_to = "tbl",
+    values_to = "stat"
+  )
+
+# If you need to add file_id and year columns as in the Python code:
+chunk_pivoted$file_id <- data_file_id
+chunk_pivoted$year <- year
+
+# If you're processing in chunks like in the Python code:
+chunk_size <- 100000
+df_pivoted <- data.frame()
+
+for (chunk in read_csv_chunked(segment_data_file, chunk_size = chunk_size)) {
+  chunk_pivoted <- chunk %>%
+    pivot_longer(
+      cols = -all_of(pivot_columns),
+      names_to = "tbl",
+      values_to = "stat"
+    ) %>%
+    mutate(file_id = data_file_id, year = year)
+  
+  df_pivoted <- bind_rows(df_pivoted, chunk_pivoted)
+}
