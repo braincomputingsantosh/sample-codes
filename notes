@@ -1,18 +1,55 @@
-WITH geo AS (
-  SELECT geoid, tract, county, state AS st_num, stusab AS state,
-         logrecno, year, sumlevel
-  FROM census.geo_sf_2010
-  WHERE sumlevel = 140
-),
-sf AS (
-  SELECT *
-  FROM census.sf1
-  WHERE tbl IN ('p1-0')
-)
-SELECT a.stat, a.logrecno, a.year, a.tbl, b.state, b.county, b.tract,
-       b.st_num, b.sumlevel
-FROM sf a
-INNER JOIN geo b
-  ON a.state = b.state
-  AND a.logrecno = b.logrecno
-  AND a.year = b.year;
+Calculating "stat" from SF1 (Summary File 1) data typically involves several steps. Here's a general approach:
+
+Identify the table and variables:
+SF1 data is organized into numerous tables, each with specific variables. Identify which table and variables you need for your statistic.
+Understand the data structure:
+SF1 data is often stored in a hierarchical structure, with geographic identifiers and data values.
+Extract relevant data:
+Use SQL queries or data processing tools to extract the specific variables you need.
+Perform calculations:
+Depending on the statistic you're aiming for, you might need to:
+
+Sum values across certain geographies
+Calculate percentages or rates
+Combine multiple variables
+
+
+Apply appropriate filters:
+Ensure you're working with the correct geographic level (e.g., tract, county, state)
+
+Here's a basic example in SQL:
+
+
+SELECT 
+    geo.geoid,
+    geo.tract,
+    sf1.P001001 as total_population
+FROM 
+    census.geo_sf_2010 as geo
+JOIN 
+    census.sf1 as sf1 ON geo.logrecno = sf1.logrecno
+WHERE 
+    geo.sumlevel = '140'  -- Tract level
+    AND sf1.table_id = 'P1'  -- Total population table
+
+This query would give you the total population (stat) for each census tract.
+For more complex statistics, you might need to:
+
+Join multiple tables
+Use aggregate functions (SUM, AVG, etc.)
+Calculate derived values
+
+For example, to calculate the percentage of a specific demographic:
+
+SELECT 
+    geo.geoid,
+    geo.tract,
+    sf1.P001001 as total_population,
+    sf1.P003003 as white_alone,
+    (sf1.P003003 * 100.0 / sf1.P001001) as percent_white
+FROM 
+    census.geo_sf_2010 as geo
+JOIN 
+    census.sf1 as sf1 ON geo.logrecno = sf1.logrecno
+WHERE 
+    geo.sumlevel = '140'
