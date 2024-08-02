@@ -1,114 +1,43 @@
-Calculating "stat" from SF1 (Summary File 1) data typically involves several steps. Here's a general approach:
+import paramiko
+from databricks.sdk.runtime import *
 
-Identify the table and variables:
-SF1 data is organized into numerous tables, each with specific variables. Identify which table and variables you need for your statistic.
-Understand the data structure:
-SF1 data is often stored in a hierarchical structure, with geographic identifiers and data values.
-Extract relevant data:
-Use SQL queries or data processing tools to extract the specific variables you need.
-Perform calculations:
-Depending on the statistic you're aiming for, you might need to:
+def download_from_sftp(sftp_host, sftp_port, sftp_username, sftp_password, remote_path, local_path):
+    # Create an SSH client
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    try:
+        # Connect to the SFTP server
+        ssh.connect(sftp_host, port=sftp_port, username=sftp_username, password=sftp_password)
+        
+        # Create an SFTP client
+        sftp = ssh.open_sftp()
+        
+        # Download the file
+        sftp.get(remote_path, local_path)
+        
+        print(f"File downloaded successfully: {local_path}")
+    
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+    
+    finally:
+        # Close the SFTP and SSH connections
+        if sftp:
+            sftp.close()
+        if ssh:
+            ssh.close()
 
-Sum values across certain geographies
-Calculate percentages or rates
-Combine multiple variables
+# SFTP server details
+sftp_host = "your_sftp_host"
+sftp_port = 22  # Default SFTP port
+sftp_username = "your_username"
+sftp_password = "your_password"
 
+# File paths
+remote_file_path = "/path/to/remote/file.txt"
+volume_name = "your_volume_name"
+local_file_path = f"/dbfs/mnt/{volume_name}/downloaded_file.txt"
 
-Apply appropriate filters:
-Ensure you're working with the correct geographic level (e.g., tract, county, state)
-
-Here's a basic example in SQL:
-
-
-SELECT 
-    geo.geoid,
-    geo.tract,
-    sf1.P001001 as total_population
-FROM 
-    census.geo_sf_2010 as geo
-JOIN 
-    census.sf1 as sf1 ON geo.logrecno = sf1.logrecno
-WHERE 
-    geo.sumlevel = '140'  -- Tract level
-    AND sf1.table_id = 'P1'  -- Total population table
-
-This query would give you the total population (stat) for each census tract.
-For more complex statistics, you might need to:
-
-Join multiple tables
-Use aggregate functions (SUM, AVG, etc.)
-Calculate derived values
-
-For example, to calculate the percentage of a specific demographic:
-
-SELECT 
-    geo.geoid,
-    geo.tract,
-    sf1.P001001 as total_population,
-    sf1.P003003 as white_alone,
-    (sf1.P003003 * 100.0 / sf1.P001001) as percent_white
-FROM 
-    census.geo_sf_2010 as geo
-JOIN 
-    census.sf1 as sf1 ON geo.logrecno = sf1.logrecno
-WHERE 
-    geo.sumlevel = '140'
-
-
-
-Based on line 132 in the image, the 'stat' value is calculated using the pandas.melt() function:
-pythonCopychunk_pivoted = pandas.melt(chunk, id_vars=pivot_columns, var_name='tbl', value_name='stat')
-This operation is performing a pivot (or more accurately, an "unpivot") on the data chunk. Here's how it works:
-
-The original 'chunk' dataframe likely has multiple columns, where each column represents a different census table or variable.
-The pandas.melt() function is used to reshape the data from wide to long format:
-
-id_vars=pivot_columns: These columns are kept as identifier variables.
-var_name='tbl': The names of the original columns become values in a new column called 'tbl'.
-value_name='stat': The values from the original columns are placed into a new column called 'stat'.
-
-
-In this context, 'stat' is not calculated in the traditional sense, but rather it's the original value from each cell in the wide-format table, now organized into a single column.
-
-For example, if the original data looked like this:
-Copy| geo_id | P001001 | P002001 |
-|--------|---------|---------|
-| 12345  | 100     | 50      |
-After melting, it would become:
-Copy| geo_id | tbl     | stat |
-|--------|---------|------|
-| 12345  | P001001 | 100  |
-| 12345  | P002001 | 50   |
-So, 'stat' in this case represents the actual census counts or values for each table (tbl) and geographic unit, reshaped into a long format for easier processing and database insertion.
-
-library(tidyverse)
-
-# Assuming your data frame is called 'chunk'
-# and 'pivot_columns' is a vector of column names to keep as identifiers
-
-chunk_pivoted <- chunk %>%
-  pivot_longer(
-    cols = -all_of(pivot_columns),
-    names_to = "tbl",
-    values_to = "stat"
-  )
-
-# If you need to add file_id and year columns as in the Python code:
-chunk_pivoted$file_id <- data_file_id
-chunk_pivoted$year <- year
-
-# If you're processing in chunks like in the Python code:
-chunk_size <- 100000
-df_pivoted <- data.frame()
-
-for (chunk in read_csv_chunked(segment_data_file, chunk_size = chunk_size)) {
-  chunk_pivoted <- chunk %>%
-    pivot_longer(
-      cols = -all_of(pivot_columns),
-      names_to = "tbl",
-      values_to = "stat"
-    ) %>%
-    mutate(file_id = data_file_id, year = year)
-  
-  df_pivoted <- bind_rows(df_pivoted, chunk_pivoted)
-}
+# Call the function to download the file
+download_from_sftp(sftp_host, sftp_port, sftp_username, sftp_password, remote_file_path, local_file_path)
