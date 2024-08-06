@@ -1,4 +1,4 @@
-columnDefinitions = ', '.join([f'{field["name"]} character varying COLLATE pg_catalog."default"' if field["type"] == "TEXT" else f'{field["name"]} double precision' if field["type"] == "INTEGER" else f'{field["name"]} {field["type"]}' for field in column_specs])
+columnDefinitions = ', '.join([f'{field["name"]} character varying COLLATE pg_catalog."default"' for field in column_specs])
 
 sqlCreateTableQuery = f'CREATE TABLE IF NOT EXISTS sf1_data_2010 ({columnDefinitions})'
 print(sqlCreateTableQuery)
