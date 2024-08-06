@@ -1,28 +1,4 @@
-Incorrect 'stat' values:
+columnDefinitions = ', '.join([f'{field["name"]} character varying COLLATE pg_catalog."default"' if field["type"] == "TEXT" else f'{field["name"]} double precision' if field["type"] == "INTEGER" else f'{field["name"]} {field["type"]}' for field in column_specs])
 
-The user notes that 'stat' values are incorrect in some cases.
-For total population (p1-0), the correct number of tracts is present, but the 'stat' values are wrong.
-The census website shows the value should be 4,714, but the user's data shows 22.
-
-
-Duplicate observations:
-
-There are duplicate observations in the data.
-A query for total housing units in DC should return only 1 observation, but it returns 3.
-
-
-Incorrect tract counts:
-
-For variable 'hct1-1', the correct number of observations for census tracts is not present.
-The user should get 296,719 observations but only gets 27,632.
-
-
-Mismatch in specific 'stat' values:
-
-The user can't match the specific values of 'stat' for specific census tracts.
-
-
-Inconsistent 'year_type' column:
-
-The census.sf1 table has a column called 'year_type' with a value of 5.
-This value only makes sense in the context of ACS (American Community Survey), not the decennial census.
+sqlCreateTableQuery = f'CREATE TABLE IF NOT EXISTS sf1_data_2010 ({columnDefinitions})'
+print(sqlCreateTableQuery)
