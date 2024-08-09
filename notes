@@ -6,40 +6,37 @@ https://www.census.gov/data/datasets/2010/dec/summary-file-1.html
 
 
 
-import pyodbc
+import subprocess
 import pandas as pd
+import csv
 
-def access_to_csv(access_file_path, table_name, csv_file_path):
-    # Connection string
-    conn_str = (
-        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
-        r'DBQ=' + access_file_path + ';'
-    )
-
+def access_to_csv_mac(access_file_path, table_name, csv_file_path):
     try:
-        # Establish the connection
-        conn = pyodbc.connect(conn_str)
+        # Use mdb-tables to list all tables (optional, for verification)
+        tables = subprocess.check_output(['mdb-tables', '-1', access_file_path]).decode('utf-8').split('\n')
+        if table_name not in tables:
+            raise ValueError(f"Table '{table_name}' not found in the database.")
 
-        # Query to select all data from the specified table
-        query = f"SELECT * FROM [{table_name}]"
-
-        # Read the data into a pandas DataFrame
-        df = pd.read_sql(query, conn)
+        # Use mdb-export to export the table data
+        mdb_process = subprocess.Popen(['mdb-export', access_file_path, table_name], 
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        # Read the output into a pandas DataFrame
+        df = pd.read_csv(mdb_process.stdout)
 
         # Write the DataFrame to a CSV file
-        df.to_csv(csv_file_path, index=False)
+        df.to_csv(csv_file_path, index=False, quoting=csv.QUOTE_ALL)
 
         print(f"Data from table '{table_name}' has been exported to '{csv_file_path}'")
 
-    except pyodbc.Error as e:
+    except subprocess.CalledProcessError as e:
+        print(f"An error occurred while executing mdb-tools: {e}")
+    except Exception as e:
         print(f"An error occurred: {e}")
-    finally:
-        if 'conn' in locals():
-            conn.close()
 
 # Usage
-access_file_path = r'C:\path\to\your\database.accdb'  # or .mdb for older versions
+access_file_path = '/path/to/your/database.mdb'  # or .accdb
 table_name = 'YourTableName'
-csv_file_path = r'C:\path\to\output\data.csv'
+csv_file_path = '/path/to/output/data.csv'
 
-access_to_csv(access_file_path, table_name, csv_file_path)
+access_to_csv_mac(access_file_path, table_name, csv_file_path)
