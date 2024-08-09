@@ -3,3 +3,43 @@ https://www.census.gov/programs-surveys/acs/data/summary-file/sequence-based/201
 https://www2.census.gov/programs-surveys/decennial/2010/technical-documentation/complete-tech-docs/summary-file/dpsf.pdf
 
 https://www.census.gov/data/datasets/2010/dec/summary-file-1.html
+
+
+
+import pyodbc
+import pandas as pd
+
+def access_to_csv(access_file_path, table_name, csv_file_path):
+    # Connection string
+    conn_str = (
+        r'DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};'
+        r'DBQ=' + access_file_path + ';'
+    )
+
+    try:
+        # Establish the connection
+        conn = pyodbc.connect(conn_str)
+
+        # Query to select all data from the specified table
+        query = f"SELECT * FROM [{table_name}]"
+
+        # Read the data into a pandas DataFrame
+        df = pd.read_sql(query, conn)
+
+        # Write the DataFrame to a CSV file
+        df.to_csv(csv_file_path, index=False)
+
+        print(f"Data from table '{table_name}' has been exported to '{csv_file_path}'")
+
+    except pyodbc.Error as e:
+        print(f"An error occurred: {e}")
+    finally:
+        if 'conn' in locals():
+            conn.close()
+
+# Usage
+access_file_path = r'C:\path\to\your\database.accdb'  # or .mdb for older versions
+table_name = 'YourTableName'
+csv_file_path = r'C:\path\to\output\data.csv'
+
+access_to_csv(access_file_path, table_name, csv_file_path)
