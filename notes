@@ -57,3 +57,14 @@ FROM indexed_dd dd
 WHERE sf1.segment::text = dd.segment::text
   AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
   AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position;
+
+
+Certainly. Here's an explanation tailored for a data steward who may not be familiar with technical database terms:
+
+We're dealing with two important tables in our census database. One table, sf1_temp, contains our main census data, while the other, dd_seq_dhc, holds additional details we need to incorporate. The challenge is that these tables organize their information differently, making it tricky to match them up correctly.
+
+In sf1_temp, we have entries like "p1-0" or "p1-1" in the tbl column. The number after the hyphen is crucial - it's like an index telling us which specific piece of information we're looking at. Meanwhile, in dd_seq_dhc, this index isn't explicitly stated but is implied by the order of the rows.
+
+Our approach carefully aligns these two ways of organizing data. We first prepare the dd_seq_dhc data by adding this missing index, making sure we can accurately match it with sf1_temp. Then, we use this prepared information to update sf1_temp, adding valuable details from dd_seq_dhc to the right places.
+
+This method is necessary because it ensures accuracy in our data update. It prevents mistakes that could happen if we simply tried to match the tables without accounting for their different structures. By taking these extra steps, we're guaranteeing that each piece of census data gets the correct additional information attached to it, maintaining the integrity and reliability of our census database.
