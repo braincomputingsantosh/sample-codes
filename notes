@@ -51,3 +51,18 @@ BEGIN
     END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+
+CREATE OR REPLACE FUNCTION update_all_states(batch_size int)
+RETURNS void AS $$
+DECLARE
+    state_rec record;
+BEGIN
+    FOR state_rec IN (SELECT DISTINCT state FROM census.sf1_temp ORDER BY state)
+    LOOP
+        RAISE NOTICE 'Processing state: %', state_rec.state;
+        PERFORM update_sf1_temp_batched(state_rec.state, batch_size);
+        RAISE NOTICE 'Completed processing state: %', state_rec.state;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
