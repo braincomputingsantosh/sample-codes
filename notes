@@ -1,7 +1,7 @@
 DO $$
 DECLARE
     state_rec record;
-    last_processed_id bigint;
+    last_processed_file_id bigint;
     rows_updated int;
     error_count int;
     batch_size int := 100000; -- You can adjust this value
@@ -10,7 +10,7 @@ BEGIN
     LOOP
         RAISE NOTICE 'Processing state: %', state_rec.state;
         
-        last_processed_id := 0;
+        last_processed_file_id := 0;
         error_count := 0;
         
         LOOP
@@ -25,21 +25,21 @@ BEGIN
                     WHERE field_code IS NOT NULL
                 ),
                 to_update AS (
-                    SELECT sf1.id
+                    SELECT sf1.file_id
                     FROM census.sf1_temp sf1
                     WHERE sf1.state = state_rec.state
-                      AND sf1.id > last_processed_id
-                    ORDER BY sf1.id
+                      AND sf1.file_id > last_processed_file_id
+                    ORDER BY sf1.file_id
                     LIMIT batch_size
                 )
                 UPDATE census.sf1_temp sf1
                 SET tbl = dd.field_code
                 FROM indexed_dd dd, to_update
-                WHERE sf1.id = to_update.id
+                WHERE sf1.file_id = to_update.file_id
                   AND sf1.segment::text = dd.segment::text
                   AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
                   AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
-                RETURNING sf1.id INTO last_processed_id;
+                RETURNING sf1.file_id INTO last_processed_file_id;
 
                 GET DIAGNOSTICS rows_updated = ROW_COUNT;
                 
@@ -50,14 +50,14 @@ BEGIN
                 RAISE WARNING 'Error in batch for state %: % %', state_rec.state, SQLERRM, SQLSTATE;
                 error_count := error_count + 1;
                 -- Move to the next batch even if this one failed
-                last_processed_id := last_processed_id + batch_size;
+                last_processed_file_id := last_processed_file_id + batch_size;
                 -- If too many errors occur, exit the loop
                 IF error_count > 10 THEN
                     RAISE EXCEPTION 'Too many errors occurred while processing state %', state_rec.state;
                 END IF;
             END;
             
-            EXIT WHEN rows_updated = 0 OR last_processed_id IS NULL;
+            EXIT WHEN rows_updated = 0 OR last_processed_file_id IS NULL;
             
             PERFORM pg_sleep(0.1);  -- 100 milliseconds delay
         END LOOP;
