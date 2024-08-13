@@ -160,4 +160,37 @@ conn.close()
 print("Data has been successfully loaded into the SQLite database.")
 
 
+******** Validate GEOID **************
+
+import pandas as pd
+import geopandas as gpd
+import folium
+
+# Load your data
+df = pd.read_sql_query("SELECT * FROM sf1_data_2010", conn)
+
+# If you have a shapefile with GEOID and geometry, use this:
+# gdf = gpd.read_file('path_to_your_shapefile.shp')
+# df = df.merge(gdf[['GEOID', 'geometry']], on='GEOID', how='left')
+
+# For this example, let's assume you have lat/lon columns
+# If not, you'll need to geocode your GEOIDs or join with a shapefile
+
+# Create a map centered on the mean lat/lon
+center_lat = df['LATITUDE'].mean()
+center_lon = df['LONGITUDE'].mean()
+m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+
+# Add markers for each GEOID
+for idx, row in df.iterrows():
+    folium.Marker(
+        location=[row['LATITUDE'], row['LONGITUDE']],
+        popup=f"GEOID: {row['GEOID']}<br>STATE: {row['STATE']}<br>COUNTY: {row['COUNTY']}<br>TRACT: {row['TRACT']}<br>BLOCK: {row['BLOCK']}",
+        tooltip=row['GEOID']
+    ).add_to(m)
+
+# Save the map
+m.save('geoid_validation_map.html')
+
+print("Map has been saved as 'geoid_validation_map.html'")
 
