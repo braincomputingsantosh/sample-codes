@@ -194,3 +194,47 @@ m.save('geoid_validation_map.html')
 
 print("Map has been saved as 'geoid_validation_map.html'")
 
+
+******* New Code **************
+
+import sqlite3
+import pandas as pd
+import folium
+
+# Connect to the SQLite database
+conn = sqlite3.connect('sf1_dc_geo_data.db')
+
+# Query to select data from the database
+# You may need to adjust this query based on your actual table structure
+query = """
+SELECT GEOID, STATE, COUNTY, TRACT, BLOCK, 
+       CAST(SUBSTR(TRACT, 1, 2) || '.' || SUBSTR(TRACT, 3) AS FLOAT) AS LAT, 
+       CAST(SUBSTR(BLOCK, 1, 2) || '.' || SUBSTR(BLOCK, 3) AS FLOAT) AS LON
+FROM sf1_data_2010
+LIMIT 1000  -- Limiting to 1000 records for performance, adjust as needed
+"""
+
+# Execute the query and load results into a DataFrame
+df = pd.read_sql_query(query, conn)
+
+# Close the database connection
+conn.close()
+
+# Create a map centered on the mean lat/lon
+center_lat = df['LAT'].mean()
+center_lon = df['LON'].mean()
+m = folium.Map(location=[center_lat, center_lon], zoom_start=10)
+
+# Add markers for each GEOID
+for idx, row in df.iterrows():
+    folium.Marker(
+        location=[row['LAT'], row['LON']],
+        popup=f"GEOID: {row['GEOID']}<br>STATE: {row['STATE']}<br>COUNTY: {row['COUNTY']}<br>TRACT: {row['TRACT']}<br>BLOCK: {row['BLOCK']}",
+        tooltip=row['GEOID']
+    ).add_to(m)
+
+# Save the map
+m.save('geoid_validation_map.html')
+
+print("Map has been saved as 'geoid_validation_map.html'")
+
