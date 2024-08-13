@@ -1,68 +1,17 @@
-CREATE OR REPLACE FUNCTION update_sf1_temp_batched(state_code text, batch_size int)
-RETURNS void AS $$
-DECLARE
-    last_processed_id bigint := 0;
-    rows_updated int;
-BEGIN
-    LOOP
-        -- Start a new transaction for each batch
-        BEGIN
-            WITH indexed_dd AS (
-                SELECT 
-                    segment, 
-                    tbl, 
-                    field_code,
-                    ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position
-                FROM census.dd_seq_dhc
-                WHERE field_code IS NOT NULL
-            ),
-            to_update AS (
-                SELECT sf1.id
-                FROM census.sf1_temp sf1
-                WHERE sf1.state = state_code
-                  AND sf1.id > last_processed_id
-                ORDER BY sf1.id
-                LIMIT batch_size
-                FOR UPDATE  -- This locks the rows we're about to update
-            )
-            UPDATE census.sf1_temp sf1
-            SET tbl = dd.field_code
-            FROM indexed_dd dd, to_update
-            WHERE sf1.id = to_update.id
-              AND sf1.segment::text = dd.segment::text
-              AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
-              AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
-            RETURNING sf1.id INTO last_processed_id;
-
-            GET DIAGNOSTICS rows_updated = ROW_COUNT;
-            
-            -- Commit the transaction for this batch
-            COMMIT;
-        EXCEPTION WHEN OTHERS THEN
-            -- If there's an error, rollback this batch
-            ROLLBACK;
-            RAISE NOTICE 'Error occurred: % %', SQLERRM, SQLSTATE;
-        END;
-        
-        EXIT WHEN rows_updated = 0;
-        
-        -- Optionally, add a small delay between batches to reduce database load
-        PERFORM pg_sleep(0.1);  -- 100 milliseconds delay
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
-
-
-CREATE OR REPLACE FUNCTION update_all_states(batch_size int)
-RETURNS void AS $$
+DO $$
 DECLARE
     state_rec record;
 BEGIN
     FOR state_rec IN (SELECT DISTINCT state FROM census.sf1_temp ORDER BY state)
     LOOP
-        RAISE NOTICE 'Processing state: %', state_rec.state;
-        PERFORM update_sf1_temp_batched(state_rec.state, batch_size);
-        RAISE NOTICE 'Completed processing state: %', state_rec.state;
+        BEGIN
+            RAISE NOTICE 'Processing state: %', state_rec.state;
+            PERFORM update_sf1_temp_batched(state_rec.state, 100000);
+            RAISE NOTICE 'Completed processing state: %', state_rec.state;
+            COMMIT;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE WARNING 'Error processing state %: % %', state_rec.state, SQLERRM, SQLSTATE;
+            ROLLBACK;
+        END;
     END LOOP;
-END;
-$$ LANGUAGE plpgsql;
+END $$;
