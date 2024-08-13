@@ -82,3 +82,82 @@ This explanation provides a comprehensive overview of the CTE approach, its bene
 5. We use UPPER() and text conversion to make sure we don't miss matches due to differences in letter case or data types.
 
 This approach ensures that each entry in our main census table gets accurately paired with its corresponding detailed information, replacing general codes with more specific identifiers. It's a careful way of enriching our census data while maintaining its integrity and accuracy.
+
+
+*********** GEOID *******************
+
+filePath = '/data/2024_sf1_geo/dcgeo2010.sf1'
+
+column_specs = [
+    {"name": "FILEID", "start": 1, "length": 6},
+    {"name": "STUSAB", "start": 7, "length": 2},
+    {"name": "SUMLEVEL", "start": 9, "length": 3},
+    {"name": "GEOCOMP", "start": 12, "length": 2},
+    {"name": "CHARITER", "start": 14, "length": 3},
+    {"name": "CIFSN", "start": 17, "length": 2},
+    {"name": "LOGRECNO", "start": 19, "length": 7},
+    {"name": "REGION", "start": 26, "length": 1},
+    {"name": "DIVISION", "start": 27, "length": 1},
+    {"name": "STATE", "start": 28, "length": 2},
+    {"name": "COUNTY", "start": 30, "length": 3},
+    {"name": "TRACT", "start": 55, "length": 6},
+    {"name": "COUNTYCC", "start": 33, "length": 2},
+    {"name": "COUNTYSC", "start": 35, "length": 2},
+    {"name": "COUSUB", "start": 37, "length": 5},
+    {"name": "COUSUBCC", "start": 42, "length": 2},
+    {"name": "COUSUBSC", "start": 44, "length": 2},
+    {"name": "PLACE", "start": 46, "length": 5},
+    {"name": "PLACECC", "start": 51, "length": 2},
+    {"name": "PLACESC", "start": 53, "length": 2},
+    {"name": "BLKGRP", "start": 61, "length": 1},
+    {"name": "BLOCK", "start": 62, "length": 4}
+]
+
+def parsed_line(line):
+    parsed_data = {}
+    for field in column_specs:
+        startPos = field["start"] - 1
+        endPos = startPos + field["length"]
+        parsed_data[field["name"]] = line[startPos:endPos].strip()
+    return parsed_data
+
+parsed_records = []
+with open(filePath, 'r', encoding='latin1') as file:
+    for line in file:
+        parsed_record = parsed_line(line)
+        # Create GEOID by combining STATE, COUNTY, TRACT, and BLOCK
+        parsed_record['GEOID'] = (
+            parsed_record['STATE'] +
+            parsed_record['COUNTY'] +
+            parsed_record['TRACT'] +
+            parsed_record['BLOCK']
+        )
+        parsed_records.append(parsed_record)
+
+import pandas as pd
+df = pd.DataFrame(parsed_records)
+
+# Add GEOID to column_specs for the CREATE TABLE statement
+column_specs.append({"name": "GEOID", "start": 0, "length": 0})  # Dummy values for start and length
+
+columnDefinitions = ', '.join([f'{field["name"]} TEXT' for field in column_specs])
+sqlCreateTableQuery = f'CREATE TABLE IF NOT EXISTS sf1_data_2010 ({columnDefinitions})'
+print(sqlCreateTableQuery)
+
+import sqlite3
+
+conn = sqlite3.connect('sf1_dc_geo_data.db')
+cursor = conn.cursor()
+
+# Create the table
+cursor.execute(sqlCreateTableQuery)
+
+# Insert the data
+df.to_sql('sf1_data_2010', conn, if_exists='replace', index=False)
+
+conn.close()
+
+print("Data has been successfully loaded into the SQLite database.")
+
+
+
