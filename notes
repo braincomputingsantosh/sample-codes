@@ -4,44 +4,6 @@ https://www2.census.gov/programs-surveys/decennial/2010/technical-documentation/
 
 https://www.census.gov/data/datasets/2010/dec/summary-file-1.html
 
-
-
-import subprocess
-import pandas as pd
-import csv
-
-def access_to_csv_mac(access_file_path, table_name, csv_file_path):
-    try:
-        # Use mdb-tables to list all tables (optional, for verification)
-        tables = subprocess.check_output(['mdb-tables', '-1', access_file_path]).decode('utf-8').split('\n')
-        if table_name not in tables:
-            raise ValueError(f"Table '{table_name}' not found in the database.")
-
-        # Use mdb-export to export the table data
-        mdb_process = subprocess.Popen(['mdb-export', access_file_path, table_name], 
-                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        
-        # Read the output into a pandas DataFrame
-        df = pd.read_csv(mdb_process.stdout)
-
-        # Write the DataFrame to a CSV file
-        df.to_csv(csv_file_path, index=False, quoting=csv.QUOTE_ALL)
-
-        print(f"Data from table '{table_name}' has been exported to '{csv_file_path}'")
-
-    except subprocess.CalledProcessError as e:
-        print(f"An error occurred while executing mdb-tools: {e}")
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-# Usage
-access_file_path = '/path/to/your/database.mdb'  # or .accdb
-table_name = 'YourTableName'
-csv_file_path = '/path/to/output/data.csv'
-
-access_to_csv_mac(access_file_path, table_name, csv_file_path)
-
-
 WITH indexed_dd AS (
   SELECT 
     segment, 
@@ -52,19 +14,71 @@ WITH indexed_dd AS (
   WHERE field_code IS NOT NULL
 )
 UPDATE census.sf1_temp sf1
-SET tbl = sf1.tbl || '_' || dd.field_code
+SET tbl = dd.field_code
 FROM indexed_dd dd
 WHERE sf1.segment::text = dd.segment::text
   AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
   AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position;
 
 
-Certainly. Here's an explanation tailored for a data steward who may not be familiar with technical database terms:
+Here's an explanation of the updated code:
 
-We're dealing with two important tables in our census database. One table, sf1_temp, contains our main census data, while the other, dd_seq_dhc, holds additional details we need to incorporate. The challenge is that these tables organize their information differently, making it tricky to match them up correctly.
+This SQL query is designed to update our census data table (sf1_temp) with more detailed information from another table (dd_seq_dhc). Here's what it does:
 
-In sf1_temp, we have entries like "p1-0" or "p1-1" in the tbl column. The number after the hyphen is crucial - it's like an index telling us which specific piece of information we're looking at. Meanwhile, in dd_seq_dhc, this index isn't explicitly stated but is implied by the order of the rows.
+1. First, we prepare our reference data (dd_seq_dhc). We select the important columns (segment, tbl, and field_code) and create a new column called index_position. This index_position is crucial because it helps us match rows between our two tables correctly.
 
-Our approach carefully aligns these two ways of organizing data. We first prepare the dd_seq_dhc data by adding this missing index, making sure we can accurately match it with sf1_temp. Then, we use this prepared information to update sf1_temp, adding valuable details from dd_seq_dhc to the right places.
+2. In our main census table (sf1_temp), we have entries like "p1-0" or "p1-1" in the tbl column. The number after the hyphen is important - it tells us which specific piece of information we're dealing with.
 
-This method is necessary because it ensures accuracy in our data update. It prevents mistakes that could happen if we simply tried to match the tables without accounting for their different structures. By taking these extra steps, we're guaranteeing that each piece of census data gets the correct additional information attached to it, maintaining the integrity and reliability of our census database.
+3. We then update sf1_temp by matching each row with the correct row from our prepared dd_seq_dhc data. We match based on three things:
+   - The segment values must be the same
+   - The first part of sf1_temp's tbl (before the hyphen) must match dd_seq_dhc's tbl
+   - The number after the hyphen in sf1_temp's tbl must match our calculated index_position
+
+4. When we find a match, we replace the entire tbl value in sf1_temp with the field_code from dd_seq_dhc. This means we're swapping out codes like "p1-0" for more descriptive identifiers.
+
+
+Certainly. I'll provide a more detailed and explanatory breakdown of the CTE approach, which should help you explain it to a data steward. This explanation will focus on the concept, purpose, and benefits of using a CTE in this context.
+
+Explaining the CTE Approach to a Data Steward:
+
+1. Introduction to CTEs:
+   "A Common Table Expression, or CTE, is like creating a temporary named result set that we can reference within our main query. It's a way to organize complex queries into more manageable, readable pieces."
+
+2. Purpose of the CTE in this scenario:
+   "In our case, we're using a CTE to prepare and structure the data from the census.dd_seq_dhc table before we use it in our main update operation. This preparation step helps us handle the complexity of matching index positions and ensures our update logic is clear and efficient."
+
+3. Breaking down the CTE (indexed_dd):
+   "Let's look at what our CTE, named 'indexed_dd', does:
+   a) It selects specific columns we need: segment, tbl, and field_code.
+   b) It creates a new column called index_position. This is crucial because it assigns a number (starting from 0) to each row within groups defined by segment and tbl.
+   c) It only includes rows where field_code is not null, as we're not interested in empty values."
+
+4. Explaining the ROW_NUMBER() function:
+   "We use a special function called ROW_NUMBER() to create our index_position. It's like assigning race numbers to runners, but we're grouping by segment and tbl, and ordering by sort_id. We subtract 1 from this number so our index starts at 0 instead of 1."
+
+5. Benefits of using the CTE:
+   "By preparing our data this way, we achieve several benefits:
+   a) Improved readability: The main query becomes easier to understand because the complex logic of creating index positions is separated.
+   b) Reusability: If we needed to use this indexed data multiple times in our query, we could easily reference the CTE without repeating the logic.
+   c) Optimization: The database can sometimes optimize CTEs better than nested subqueries."
+
+6. The Main Update Query:
+   "After preparing our data with the CTE, our main update query becomes more straightforward:
+   a) We join our census.sf1_temp table with our prepared indexed_dd data.
+   b) We match rows based on segment, the first part of the tbl column, and the index position.
+   c) When we find a match, we update the tbl column by adding the corresponding field_code."
+
+7. Handling Data Inconsistencies:
+   "Our approach also handles potential data inconsistencies:
+   a) We use UPPER() to ignore case differences when matching tbl values.
+   b) We cast the segment to text to ensure we can compare it across tables, even if the data types are different.
+   c) We use SPLIT_PART() to separate the tbl value into its base and index components, allowing for flexible matching."
+
+Conclusion:
+"In essence, this CTE approach allows us to perform a complex update operation in a structured, readable, and efficient manner. It prepares our reference data (from dd_seq_dhc) in a format that makes it easy to match and update our main data (in sf1_temp), handling various data formats and potential inconsistencies along the way."
+
+This explanation provides a comprehensive overview of the CTE approach, its benefits, and how it addresses the specific requirements of your data update task. It should give a data steward a clear understanding of the process and its advantages.
+
+5. We use UPPER() and text conversion to make sure we don't miss matches due to differences in letter case or data types.
+
+This approach ensures that each entry in our main census table gets accurately paired with its corresponding detailed information, replacing general codes with more specific identifiers. It's a careful way of enriching our census data while maintaining its integrity and accuracy.
