@@ -25,17 +25,19 @@ BEGIN
                     WHERE field_code IS NOT NULL
                 ),
                 to_update AS (
-                    SELECT sf1.file_id
+                    SELECT sf1.file_id, sf1.segment, sf1.tbl
                     FROM census.sf1_temp sf1
                     WHERE sf1.state = state_rec.state
                       AND sf1.file_id > last_processed_file_id
-                    ORDER BY sf1.file_id
+                    ORDER BY sf1.file_id, sf1.segment, sf1.tbl
                     LIMIT batch_size
                 )
                 UPDATE census.sf1_temp sf1
                 SET tbl = dd.field_code
                 FROM indexed_dd dd, to_update
                 WHERE sf1.file_id = to_update.file_id
+                  AND sf1.segment = to_update.segment
+                  AND sf1.tbl = to_update.tbl
                   AND sf1.segment::text = dd.segment::text
                   AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
                   AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
