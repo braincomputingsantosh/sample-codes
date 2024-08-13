@@ -14,8 +14,6 @@ BEGIN
         error_count := 0;
         
         LOOP
-            SAVEPOINT batch_savepoint;
-            
             BEGIN
                 WITH indexed_dd AS (
                     SELECT 
@@ -48,9 +46,7 @@ BEGIN
                 RAISE NOTICE 'Processed batch for state % - % rows updated', state_rec.state, rows_updated;
 
             EXCEPTION WHEN OTHERS THEN
-                -- If there's an error, rollback to the savepoint
-                ROLLBACK TO SAVEPOINT batch_savepoint;
-                
+                -- Handle the error, but don't rollback
                 RAISE WARNING 'Error in batch for state %: % %', state_rec.state, SQLERRM, SQLSTATE;
                 error_count := error_count + 1;
                 -- Move to the next batch even if this one failed
@@ -60,9 +56,6 @@ BEGIN
                     RAISE EXCEPTION 'Too many errors occurred while processing state %', state_rec.state;
                 END IF;
             END;
-            
-            -- Release the savepoint
-            RELEASE SAVEPOINT batch_savepoint;
             
             EXIT WHEN rows_updated = 0 OR last_processed_id IS NULL;
             
