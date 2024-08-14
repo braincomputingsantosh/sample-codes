@@ -396,3 +396,60 @@ handle_geography('PCT1', 'tract')
 
 # Close the connection
 conn.close()
+******************* v6 **************************
+
+import requests
+import pandas as pd
+import sqlite3
+
+# Define your Census API key
+API_KEY = 'your_api_key_here'  # Replace with your actual Census API key
+
+# Connect to SQLite Database (or PostgreSQL for production)
+conn = sqlite3.connect('census_data.db')
+cursor = conn.cursor()
+
+# Function to create tables similar to ACS/2010 Census structure
+def create_structured_table(table_name, columns):
+    column_definitions = ', '.join([f"{col} TEXT" for col in columns])
+    create_query = f"CREATE TABLE IF NOT EXISTS {table_name} ({column_definitions});"
+    cursor.execute(create_query)
+    print(f"Table {table_name} created or verified.")
+
+# Function to populate the table with data pulled from Census API
+def populate_table_from_api(table_name, columns, api_params):
+    BASE_URL = 'https://api.census.gov/data/2020/acs/acs5'
+    api_params['key'] = API_KEY
+    response = requests.get(BASE_URL, params=api_params)
+    
+    if response.status_code == 200:
+        data = response.json()
+        df = pd.DataFrame(data[1:], columns=data[0])
+        
+        # Check if the table exists before attempting to insert data
+        cursor.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")
+        if cursor.fetchone() is None:
+            print(f"Error: Table {table_name} does not exist.")
+            return
+        
+        placeholders = ', '.join(['?'] * len(df.columns))
+        insert_query = f"INSERT INTO {table_name} VALUES ({placeholders})"
+        cursor.executemany(insert_query, df.values.tolist())
+        conn.commit()
+        print(f"Data populated into {table_name}.")
+    else:
+        print(f"Error fetching data: {response.status_code}")
+
+# Ensure table is created before population
+columns_brfss = ['NAME', 'B01001_001E', 'B02001_002E']  # Example columns, customize as needed
+create_structured_table('PCT1', columns_brfss)
+
+# Now populate the table with data
+api_params_pct1 = {
+    'get': 'NAME,B01001_001E',
+    'for': 'state:*'
+}
+populate_table_from_api('PCT1', columns_brfss, api_params_pct1)
+
+# Close the connection
+conn.close()
