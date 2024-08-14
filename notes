@@ -188,3 +188,81 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+*********************** All Segments **********************************
+import requests
+import pandas as pd
+import sqlite3
+from sqlalchemy import create_engine
+import time
+
+# Configuration
+API_KEY = "YOUR_CENSUS_API_KEY"
+BASE_URL = "https://api.census.gov/data"
+YEAR = "2020"
+DATASET = "dec/pl"
+SQLITE_DB = "census_data.db"
+
+# Updated list of tables and their variables
+TABLES = {
+    "P1": ["P1_001N"],  # Total Population
+    "P2": ["P2_001N", "P2_002N", "P2_003N"],  # Hispanic or Latino, and Not Hispanic or Latino
+    "P3": ["P3_001N", "P3_002N", "P3_003N", "P3_004N", "P3_005N", "P3_006N", "P3_007N"],  # Race
+    "P4": ["P4_001N", "P4_002N", "P4_003N"],  # Hispanic or Latino, and Race
+    "P5": ["P5_001N", "P5_002N", "P5_003N", "P5_004N", "P5_005N", "P5_006N", "P5_007N", "P5_008N", "P5_009N", "P5_010N"],  # Group Quarters Population
+    "H1": ["H1_001N"],  # Total Housing Units
+    "GEO": ["NAME", "state", "county", "tract", "block"]  # Geographic identifiers
+}
+
+def fetch_census_data(table, variables):
+    url = f"{BASE_URL}/{YEAR}/{DATASET}"
+    params = {
+        "get": ",".join(variables + ([] if table == "GEO" else ["NAME"])),
+        "for": "tract:*" if table != "GEO" else "state:*",
+        "in": "state:*" if table != "GEO" else "",
+        "key": API_KEY
+    }
+    
+    for attempt in range(3):  # Try up to 3 times
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()  # Raises an HTTPError for bad responses
+            data = response.json()
+            df = pd.DataFrame(data[1:], columns=data[0])
+            return df
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching data for table {table} (Attempt {attempt + 1}): {e}")
+            print(f"URL: {response.url}")
+            print(f"Response content: {response.text}")
+            if attempt < 2:
+                print("Retrying in 5 seconds...")
+                time.sleep(5)
+            else:
+                print("Max retries reached. Moving to next table.")
+                return None
+
+def create_table(conn, table_name, df):
+    columns = [f"{col} TEXT" for col in df.columns]
+    create_table_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(columns)})"
+    conn.execute(create_table_sql)
+
+def main():
+    engine = create_engine(f"sqlite:///{SQLITE_DB}")
+    conn = sqlite3.connect(SQLITE_DB)
+
+    for table, variables in TABLES.items():
+        print(f"Fetching data for table {table}...")
+        df = fetch_census_data(table, variables)
+        
+        if df is not None:
+            print(f"Creating table and uploading data for {table} to SQLite...")
+            table_name = table.lower()
+            create_table(conn, table_name, df)
+            df.to_sql(table_name, engine, if_exists='replace', index=False)
+            print(f"Table {table} created and data uploaded successfully.")
+        
+    conn.close()
+    print("Data fetching and uploading to SQLite complete.")
+
+if __name__ == "__main__":
+    main()
