@@ -1,5 +1,6 @@
 import psycopg2
 import pandas as pd
+import numpy as np
 import yaml
 
 # Load states from YAML file
@@ -21,7 +22,7 @@ for state in states_to_update:
 
     while True:
         try:
-            # Fetch a batch of records from the CStore table
+            # Fetch a batch of records into a Pandas DataFrame
             query = """
                 WITH indexed_dd AS (
                     SELECT 
@@ -50,15 +51,26 @@ for state in states_to_update:
             if df.empty:
                 break
 
-            # Perform updates in bulk using the DataFrame
-            for index, row in df.iterrows():
-                update_query = """
-                    UPDATE census.sf1_temp
-                    SET tbl = %s
-                    WHERE file_id = %s AND segment = %s AND tbl = %s
-                """
-                cur.execute(update_query, (row['field_code'], row['file_id'], row['segment'], row['tbl']))
-                last_processed_file_id = row['file_id']
+            # Convert the DataFrame to NumPy arrays for faster processing
+            file_ids = df['file_id'].to_numpy()
+            segments = df['segment'].to_numpy()
+            tbls = df['tbl'].to_numpy()
+            field_codes = df['field_code'].to_numpy()
+
+            # Perform bulk updates using NumPy arrays
+            update_query = """
+                UPDATE census.sf1_temp
+                SET tbl = %s
+                WHERE file_id = %s AND segment = %s AND tbl = %s
+            """
+
+            update_data = np.column_stack((field_codes, file_ids, segments, tbls))
+
+            for row in update_data:
+                cur.execute(update_query, tuple(row))
+
+            # Update the last processed file_id
+            last_processed_file_id = file_ids[-1]
 
             # Commit the updates
             conn.commit()
