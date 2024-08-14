@@ -1,88 +1,61 @@
-import psycopg2
+import requests
 import pandas as pd
-import numpy as np
-import yaml
+import sqlite3
+from sqlalchemy import create_engine
 
-# Load states from YAML file
-with open("config.yaml", 'r') as file:
-    config = yaml.safe_load(file)
+# Configuration
+API_KEY = "YOUR_CENSUS_API_KEY"
+BASE_URL = "https://api.census.gov/data"
+YEAR = "2020"
+DATASET = "acs/acs5"  # Adjust based on the specific dataset you need
+SQLITE_DB = "census_data.db"  # Name of the SQLite database file
 
-states_to_update = config['states_to_update']
+# List of tables to fetch (adjust based on your needs)
+TABLES = ["PCT1", "PCT2", "PCT3", "PCT4", "PCT10", "PCT12", "PCT19", "P9", "P11", "H11", "HCT1", "HCT3"]
 
-# Connect to your Citus CStore database
-conn = psycopg2.connect("dbname=yourdbname user=yourusername password=yourpassword")
-cur = conn.cursor()
+def fetch_census_data(table):
+    url = f"{BASE_URL}/{YEAR}/{DATASET}"
+    params = {
+        "get": f"group({table})",
+        "for": "tract:*",
+        "in": "state:*",
+        "key": API_KEY
+    }
+    response = requests.get(url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        df = pd.DataFrame(data[1:], columns=data[0])
+        return df
+    else:
+        print(f"Error fetching data for table {table}: {response.status_code}")
+        return None
 
-batch_size = 100000
-last_processed_file_id = 0
+def create_table(conn, table_name, df):
+    # Create a table based on the DataFrame structure
+    columns = [f"{col} TEXT" for col in df.columns]
+    create_table_sql = f"CREATE TABLE IF NOT EXISTS {table_name} ({', '.join(columns)})"
+    conn.execute(create_table_sql)
 
-for state in states_to_update:
-    print(f"Processing state: {state}")
-    error_count = 0
+def main():
+    # Create SQLite database and connection
+    engine = create_engine(f"sqlite:///{SQLITE_DB}")
+    conn = sqlite3.connect(SQLITE_DB)
 
-    while True:
-        try:
-            # Fetch a batch of records into a Pandas DataFrame
-            query = """
-                WITH indexed_dd AS (
-                    SELECT 
-                        segment, 
-                        tbl, 
-                        field_code,
-                        ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position
-                    FROM census.dd_seq_dhc
-                    WHERE field_code IS NOT NULL
-                ),
-                to_update AS (
-                    SELECT sf1.file_id, sf1.segment, sf1.tbl, dd.field_code
-                    FROM census.sf1_temp sf1
-                    JOIN indexed_dd dd
-                    ON sf1.segment::text = dd.segment::text
-                    AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
-                    AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
-                    WHERE sf1.state = %s AND sf1.file_id > %s
-                    ORDER BY sf1.file_id
-                    LIMIT %s
-                )
-                SELECT * FROM to_update
-            """
-            df = pd.read_sql(query, conn, params=(state, last_processed_file_id, batch_size))
+    for table in TABLES:
+        print(f"Fetching data for table {table}...")
+        df = fetch_census_data(table)
+        
+        if df is not None:
+            print(f"Creating table and uploading data for {table} to SQLite...")
+            table_name = table.lower()
+            create_table(conn, table_name, df)
+            
+            # Use to_sql to insert the data 707ce89056798d5cb2db9258299ca23cb8d0f7ca
+            df.to_sql(table_name, engine, if_exists='replace', index=False)
+            print(f"Table {table} created and data uploaded successfully.")
+        
+    conn.close()
+    print("Data fetching and uploading to SQLite complete.")
 
-            if df.empty:
-                break
-
-            # Convert the DataFrame to NumPy arrays for faster processing
-            file_ids = df['file_id'].to_numpy()
-            segments = df['segment'].to_numpy()
-            tbls = df['tbl'].to_numpy()
-            field_codes = df['field_code'].to_numpy()
-
-            # Perform bulk updates using NumPy arrays
-            update_query = """
-                UPDATE census.sf1_temp
-                SET tbl = %s
-                WHERE file_id = %s AND segment = %s AND tbl = %s
-            """
-
-            update_data = np.column_stack((field_codes, file_ids, segments, tbls))
-
-            for row in update_data:
-                cur.execute(update_query, tuple(row))
-
-            # Update the last processed file_id
-            last_processed_file_id = file_ids[-1]
-
-            # Commit the updates
-            conn.commit()
-
-        except Exception as e:
-            print(f"Error processing state {state}: {e}")
-            conn.rollback()
-            error_count += 1
-
-            if error_count > 10:
-                print(f"Too many errors in state {state}, skipping to next state.")
-                break
-
-cur.close()
-conn.close()
+if __name__ == "__main__":
+    main()
