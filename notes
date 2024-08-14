@@ -59,3 +59,58 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
+*********************************************************
+
+import requests
+import json
+
+# Configuration
+API_KEY = "YOUR_CENSUS_API_KEY"
+BASE_URL = "https://api.census.gov/data"
+YEAR = "2020"
+DATASET = "dec/pl"
+
+def get_available_tables():
+    url = f"{BASE_URL}/{YEAR}/{DATASET}/variables.json"
+    params = {
+        "key": API_KEY
+    }
+    
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # Raises an HTTPError for bad responses
+        
+        data = response.json()
+        variables = data['variables']
+        
+        # Extract unique table identifiers
+        tables = set()
+        for var in variables:
+            if '_' in var:
+                table = var.split('_')[0]
+                tables.add(table)
+        
+        return sorted(list(tables))
+    
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred: {e}")
+        return None
+
+def main():
+    print("Fetching available tables for the 2020 Decennial Census Public Law dataset...")
+    tables = get_available_tables()
+    
+    if tables:
+        print("\nAvailable tables:")
+        for table in tables:
+            print(f"- {table}")
+        print(f"\nTotal number of tables: {len(tables)}")
+    else:
+        print("Failed to retrieve table information.")
+
+if __name__ == "__main__":
+    main()
