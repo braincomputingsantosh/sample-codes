@@ -266,3 +266,54 @@ def main():
 
 if __name__ == "__main__":
     main()
+*********************** *******************************************
+
+import requests
+import pandas as pd
+import sqlite3
+
+# Step 1: Define your Census API key
+API_KEY = 'your_api_key_here'  # Replace with your actual Census API key
+
+# Step 2: Define the Census API endpoint and parameters
+BASE_URL = 'https://api.census.gov/data/2020/acs/acs5'
+PARAMS = {
+    'get': 'NAME,B01001_001E',  # Example: Get NAME (Geography) and Total Population (B01001_001E)
+    'for': 'state:*',            # Example: Pull data for all states
+    'key': API_KEY
+}
+
+# Step 3: Make the GET request to the Census API
+response = requests.get(BASE_URL, params=PARAMS)
+
+# Step 4: Check if the request was successful
+if response.status_code == 200:
+    # Convert the response to a pandas DataFrame
+    data = response.json()
+    df = pd.DataFrame(data[1:], columns=data[0])
+    
+    # Print the first few rows of the DataFrame to verify data
+    print(df.head())
+    
+    # Step 5: Connect to SQLite Database (or create it)
+    conn = sqlite3.connect('census_data.db')
+    cursor = conn.cursor()
+    
+    # Step 6: Create a table based on DataFrame columns
+    table_name = 'census_data'
+    columns = ', '.join([f'{col} TEXT' for col in df.columns])  # Assuming all data is text
+    create_table_query = f"CREATE TABLE IF NOT EXISTS {table_name} ({columns});"
+    cursor.execute(create_table_query)
+    
+    # Step 7: Insert data into the SQLite table
+    placeholders = ', '.join(['?'] * len(df.columns))
+    insert_query = f"INSERT INTO {table_name} VALUES ({placeholders})"
+    cursor.executemany(insert_query, df.values.tolist())
+    
+    # Commit the transaction and close the connection
+    conn.commit()
+    conn.close()
+    
+    print(f"Data successfully saved to {table_name} table in census_data.db SQLite database.")
+else:
+    print(f"Error: {response.status_code}")
