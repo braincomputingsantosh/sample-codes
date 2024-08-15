@@ -51,21 +51,20 @@ for state in states_to_update:
             if df.empty:
                 break
 
-            # Convert the DataFrame to NumPy arrays for faster processing
-            ids = df['id'].to_numpy()
-            field_codes = df['field_code'].to_numpy()
+            # Convert the DataFrame to native Python types for psycopg2
+            ids = df['id'].astype(int).to_list()
+            field_codes = df['field_code'].astype(str).to_list()
 
-            # Perform bulk updates using NumPy arrays
+            # Perform bulk updates
             update_query = """
                 UPDATE census.sf1_temp
                 SET tbl = %s
                 WHERE id = %s
             """
 
-            update_data = np.column_stack((field_codes, ids))
+            update_data = zip(field_codes, ids)
 
-            for row in update_data:
-                cur.execute(update_query, tuple(row))
+            cur.executemany(update_query, update_data)
 
             # Update the last processed id
             last_processed_id = ids[-1]
