@@ -1,0 +1,84 @@
+import psycopg2
+import pandas as pd
+import numpy as np
+import yaml
+
+# Load states from YAML file
+with open("config.yaml", 'r') as file:
+    config = yaml.safe_load(file)
+states_to_update = config['states_to_update']
+
+# Connect to your Citus CStore database
+conn = psycopg2.connect("dbname=yourdbname user=yourusername password=yourpassword")
+cur = conn.cursor()
+
+batch_size = 100000
+last_processed_logrecno = 0  # Start with the first logrecno
+
+for state in states_to_update:
+    print(f"Processing state: {state}")
+    error_count = 0
+    while True:
+        try:
+            # Fetch a batch of records using state and logrecno
+            query = """
+                WITH indexed_dd AS (
+                    SELECT 
+                        segment, 
+                        tbl, 
+                        field_code,
+                        ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position
+                    FROM census.dd_seq_dhc
+                    WHERE field_code IS NOT NULL
+                ),
+                to_update AS (
+                    SELECT sf1.state, sf1.logrecno, sf1.segment, sf1.tbl, dd.field_code
+                    FROM census.sf1_temp sf1
+                    JOIN indexed_dd dd
+                    ON sf1.segment::text = dd.segment::text
+                    AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
+                    AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
+                    WHERE sf1.state = %s AND sf1.logrecno > %s
+                    ORDER BY sf1.logrecno
+                    LIMIT %s
+                )
+                SELECT * FROM to_update
+            """
+            df = pd.read_sql(query, conn, params=(state, last_processed_logrecno, batch_size))
+            
+            if df.empty:
+                break
+            
+            # Convert the DataFrame to native Python types for psycopg2
+            states = df['state'].astype(str).to_list()
+            logrecnos = df['logrecno'].astype(int).to_list()
+            field_codes = df['field_code'].astype(str).to_list()
+            
+            # Perform bulk updates
+            update_query = """
+                UPDATE census.sf1_temp
+                SET tbl = %s
+                WHERE state = %s AND logrecno = %s
+            """
+            update_data = list(zip(field_codes, states, logrecnos))
+            cur.executemany(update_query, update_data)
+            
+            # Update the last processed logrecno
+            last_processed_logrecno = logrecnos[-1]
+            
+            # Commit the updates
+            conn.commit()
+            
+        except Exception as e:
+            print(f"Error processing state {state}: {e}")
+            conn.rollback()
+            error_count += 1
+            if error_count > 10:
+                print(f"Too many errors in state {state}, skipping to next state.")
+                break
+    
+    # Reset last_processed_logrecno for the next state
+    last_processed_logrecno = 0
+
+cur.close()
+conn.close()
