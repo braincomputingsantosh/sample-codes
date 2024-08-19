@@ -15,7 +15,7 @@ with open("config.yaml", 'r') as file:
     config = yaml.safe_load(file)
 states_to_update = config['states_to_update']
 
-batch_size = 100000
+batch_size = 100000  # Define your batch size
 total_updates = 0
 
 # JDBC connection properties
@@ -56,7 +56,6 @@ for state in states_to_update:
                 WHERE sf1.state = '{state}' 
                 AND sf1.logrecno > {last_processed_logrecno}
                 AND sf1.tbl != dd.field_code  -- Only select rows where tbl needs to be updated
-                LIMIT {batch_size}
             """
 
             # Load the data into a Spark DataFrame
@@ -66,23 +65,28 @@ for state in states_to_update:
                 print(f"Completed processing for state {state}. Total updates: {state_updates}", flush=True)
                 break
 
-            # Perform the update directly in Spark
-            df = df.withColumn("new_tbl", expr("field_code"))
+            # Repartition the DataFrame
+            df = df.repartition(col("file_id"), col("state"))
 
-            # Write the updated rows back to the database
-            df.write \
-                .format("jdbc") \
-                .option("url", jdbc_url) \
-                .option("dbtable", "census.sf1_temp") \
-                .option("user", connection_properties["user"]) \
-                .option("password", connection_properties["password"]) \
-                .option("driver", connection_properties["driver"]) \
-                .mode("overwrite") \
-                .save()
+            # Split the DataFrame into batches
+            for partition in df.randomSplit([1.0 / batch_size] * batch_size):
+                # Perform the update directly in Spark
+                partition = partition.withColumn("new_tbl", expr("field_code"))
 
-            # Update counters
-            state_updates += df.count()
-            total_updates += df.count()
+                # Write the updated rows back to the database
+                partition.write \
+                    .format("jdbc") \
+                    .option("url", jdbc_url) \
+                    .option("dbtable", "census.sf1_temp") \
+                    .option("user", connection_properties["user"]) \
+                    .option("password", connection_properties["password"]) \
+                    .option("driver", connection_properties["driver"]) \
+                    .mode("append") \
+                    .save()
+
+                # Update counters
+                state_updates += partition.count()
+                total_updates += partition.count()
 
             # Update the last processed logrecno
             last_processed_logrecno = df.agg({"logrecno": "max"}).collect()[0][0]
