@@ -1,0 +1,27 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, expr
+
+# Initialize Spark session
+spark = SparkSession.builder.appName("PySparkTest").getOrCreate()
+
+# Create a simple dataset
+data = [("Alice", 25), ("Bob", 30), ("Charlie", 35), ("David", 40)]
+df = spark.createDataFrame(data, ["name", "age"])
+
+# Show the dataset
+print("Original DataFrame:")
+df.show()
+
+# Perform some operations
+df_transformed = df.withColumn("age_plus_10", col("age") + 10) \
+                   .withColumn("name_upper", expr("upper(name)"))
+
+print("Transformed DataFrame:")
+df_transformed.show()
+
+# Calculate average age
+avg_age = df.agg({"age": "avg"}).collect()[0][0]
+print(f"Average age: {avg_age:.2f}")
+
+# Stop the Spark session
+spark.stop()
