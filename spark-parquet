@@ -1,5 +1,6 @@
+import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, split, upper, expr
+from pyspark.sql.functions import col, expr
 import yaml
 import time
 import sys
@@ -73,17 +74,28 @@ for state in states_to_update:
                 print(f"Completed processing for state {state}. Total updates: {state_updates}", flush=True)
                 break
 
+            # Define the Parquet file path
+            parquet_file_path = f"{parquet_path}/state_{state}_logrecno_{last_processed_logrecno}.parquet"
+
             # Persist the DataFrame to Parquet
-            df.write.parquet(f"{parquet_path}/state_{state}_logrecno_{last_processed_logrecno}.parquet", mode="overwrite")
+            df.write.parquet(parquet_file_path, mode="overwrite")
 
-            # Read back the persisted DataFrame
-            df = spark.read.parquet(f"{parquet_path}/state_{state}_logrecno_{last_processed_logrecno}.parquet")
+            # Wait until the Parquet file is fully written
+            while not os.path.exists(parquet_file_path):
+                time.sleep(1)
 
-            # Repartition the DataFrame
-            df = df.repartition(col("file_id"), col("state"))
+            # Read back the persisted DataFrame from Parquet
+            new_df = spark.read.parquet(parquet_file_path)
 
-            # Split the DataFrame into batches
-            for partition in df.randomSplit([1.0 / batch_size] * batch_size):
+            # Check if the `field_code` column exists
+            if 'field_code' not in new_df.columns:
+                raise ValueError("field_code column not found in the Parquet file")
+
+            # Repartition the new DataFrame
+            new_df = new_df.repartition(col("file_id"), col("state"))
+
+            # Split the new DataFrame into batches
+            for partition in new_df.randomSplit([1.0 / batch_size] * batch_size):
                 # Perform the update directly in Spark
                 partition = partition.withColumn("tbl", expr("field_code"))
 
@@ -103,7 +115,7 @@ for state in states_to_update:
                 total_updates += partition.count()
 
             # Update the last processed logrecno
-            last_processed_logrecno = df.agg({"logrecno": "max"}).collect()[0][0]
+            last_processed_logrecno = new_df.agg({"logrecno": "max"}).collect()[0][0]
 
             # End timing the batch update
             end_time = time.time()
