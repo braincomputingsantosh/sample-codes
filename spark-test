@@ -1,27 +1,125 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, expr
+from pyspark.sql.functions import col, split, upper, expr, coalesce
+import yaml
+import time
+import sys
 
 # Initialize Spark session
-spark = SparkSession.builder.appName("PySparkTest").getOrCreate()
+spark = SparkSession.builder \
+    .appName("Census Update") \
+    .config("spark.jars", "/path/to/postgresql-42.2.18.jar") \
+    .getOrCreate()
 
-# Create a simple dataset
-data = [("Alice", 25), ("Bob", 30), ("Charlie", 35), ("David", 40)]
-df = spark.createDataFrame(data, ["name", "age"])
+# Load states from YAML file
+with open("config.yaml", 'r') as file:
+    config = yaml.safe_load(file)
+states_to_update = config['states_to_update']
 
-# Show the dataset
-print("Original DataFrame:")
-df.show()
+batch_size = 100000  # Define your batch size
+total_updates = 0
 
-# Perform some operations
-df_transformed = df.withColumn("age_plus_10", col("age") + 10) \
-                   .withColumn("name_upper", expr("upper(name)"))
+# JDBC connection properties
+jdbc_url = "jdbc:postgresql://your-database-url:5432/yourdbname"
+connection_properties = {
+    "user": "yourusername",
+    "password": "yourpassword",
+    "driver": "org.postgresql.Driver"
+}
 
-print("Transformed DataFrame:")
-df_transformed.show()
+for state in states_to_update:
+    print(f"Processing state: {state}", flush=True)
+    error_count = 0
+    last_processed_logrecno = 0  # Reset for each state
+    state_updates = 0
 
-# Calculate average age
-avg_age = df.agg({"age": "avg"}).collect()[0][0]
-print(f"Average age: {avg_age:.2f}")
+    while True:
+        try:
+            # Start timing the batch update
+            start_time = time.time()
 
-# Stop the Spark session
+            # Load sf1_temp table
+            sf1_df = spark.read.jdbc(
+                url=jdbc_url,
+                table="(SELECT * FROM census.sf1_temp WHERE state = '{}' AND logrecno > {}) AS sf1_temp".format(state, last_processed_logrecno),
+                properties=connection_properties
+            )
+
+            # Load dd_seq_dhc table
+            dd_df = spark.read.jdbc(
+                url=jdbc_url,
+                table="(SELECT segment, tbl, field_code, ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position FROM census.dd_seq_dhc WHERE field_code IS NOT NULL) AS dd_seq_dhc",
+                properties=connection_properties
+            )
+
+            # Perform the join using DataFrame API
+            joined_df = sf1_df.join(
+                dd_df,
+                (sf1_df.segment.cast("string") == dd_df.segment.cast("string")) &
+                (upper(split(sf1_df.tbl, "-").getItem(0)) == upper(dd_df.tbl)) &
+                (split(sf1_df.tbl, "-").getItem(1).cast("integer") == dd_df.index_position),
+                "left"
+            )
+
+            # Apply the coalesce and other transformations
+            result_df = joined_df.select(
+                sf1_df.state,
+                sf1_df.logrecno,
+                sf1_df.segment,
+                sf1_df.tbl,
+                coalesce(dd_df.field_code, sf1_df.tbl).alias("field_code")
+            )
+
+            # Apply your filters
+            result_df = result_df.filter(
+                (col("tbl") != col("field_code")) | col("field_code").isNull()
+            )
+
+            if result_df.count() == 0:
+                print(f"Completed processing for state {state}. Total updates: {state_updates}", flush=True)
+                break
+
+            # Repartition the DataFrame
+            result_df = result_df.repartition(200)  # Adjust the number of partitions as needed
+
+            # Split the DataFrame into batches
+            for partition in result_df.randomSplit([1.0 / batch_size] * batch_size):
+                # Perform the update
+                partition = partition.withColumn("new_tbl", col("field_code"))
+
+                # Write the updated rows back to the database
+                partition.write \
+                    .format("jdbc") \
+                    .option("url", jdbc_url) \
+                    .option("dbtable", "census.sf1_temp") \
+                    .option("user", connection_properties["user"]) \
+                    .option("password", connection_properties["password"]) \
+                    .option("driver", connection_properties["driver"]) \
+                    .mode("overwrite") \
+                    .save()
+
+                # Update counters
+                partition_count = partition.count()
+                state_updates += partition_count
+                total_updates += partition_count
+
+            # Update the last processed logrecno
+            last_processed_logrecno = result_df.agg({"logrecno": "max"}).collect()[0][0]
+
+            # End timing the batch update
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+
+            print(f"Processed batch for state {state}. Current logrecno: {last_processed_logrecno}. "
+                  f"Batch time: {elapsed_time:.2f} seconds", flush=True)
+
+        except Exception as e:
+            print(f"Error processing state {state}: {e}", flush=True)
+            error_count += 1
+            if error_count > 10:
+                print(f"Too many errors in state {state}, skipping to next state.", flush=True)
+                break
+
+print(f"All updates completed. Total records updated: {total_updates}", flush=True)
 spark.stop()
+print("Spark session closed. Exiting program.", flush=True)
+sys.exit(0)
