@@ -1,0 +1,18 @@
+from pyspark.sql import SparkSession
+
+# Initialize Spark session
+spark = SparkSession.builder \
+    .appName("Read Parquet Example") \
+    .getOrCreate()
+
+# Path to your Parquet file
+parquet_file_path = "/path/to/your/parquet_file.parquet"
+
+# Read the Parquet file into a DataFrame
+df = spark.read.parquet(parquet_file_path)
+
+# Show the contents of the DataFrame
+df.show()
+
+# Print the schema of the DataFrame
+df.printSchema()
