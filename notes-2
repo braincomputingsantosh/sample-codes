@@ -1,0 +1,25 @@
+query = f"""
+    SELECT 
+        sf1.state, 
+        sf1.logrecno, 
+        sf1.segment, 
+        sf1.tbl, 
+        sf1.file_id, 
+        coalesce(dd.field_code, sf1.tbl) as field_code -- Handle NULLs by using coalesce
+    FROM census.sf1_temp sf1
+    LEFT JOIN (
+        SELECT 
+            segment, 
+            tbl, 
+            field_code,
+            ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position
+        FROM census.dd_seq_dhc
+        WHERE field_code IS NOT NULL
+    ) dd
+    ON sf1.segment::text = dd.segment::text
+    AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
+    AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
+    WHERE sf1.state = '{state}' 
+    AND sf1.logrecno > {last_processed_logrecno}
+    AND (sf1.tbl != dd.field_code OR dd.field_code IS NULL)
+"""
