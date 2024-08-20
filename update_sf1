@@ -1,0 +1,43 @@
+CREATE OR REPLACE FUNCTION update_sf1_temp(state_param TEXT, batch_size_param INT, last_logrecno_param INT)
+RETURNS TABLE(state TEXT, logrecno INT, updated_count INT, elapsed_time NUMERIC) AS $$
+DECLARE
+    start_time TIMESTAMP;
+    end_time TIMESTAMP;
+    updated_rows INT;
+BEGIN
+    start_time := clock_timestamp();
+    
+    WITH indexed_dd AS (
+        SELECT 
+            segment, 
+            tbl, 
+            field_code,
+            ROW_NUMBER() OVER (PARTITION BY segment, tbl ORDER BY sort_id) - 1 AS index_position
+        FROM census.dd_seq_dhc
+        WHERE field_code IS NOT NULL
+    ),
+    to_update AS (
+        SELECT sf1.state, sf1.logrecno, sf1.segment, sf1.tbl, dd.field_code
+        FROM census.sf1_temp sf1
+        JOIN indexed_dd dd
+        ON sf1.segment::text = dd.segment::text
+        AND UPPER(SPLIT_PART(sf1.tbl, '-', 1)) = UPPER(dd.tbl)
+        AND CAST(SPLIT_PART(sf1.tbl, '-', 2) AS INTEGER) = dd.index_position
+        WHERE sf1.state = state_param AND sf1.logrecno > last_logrecno_param
+        AND sf1.tbl != dd.field_code  -- Only select rows where tbl needs to be updated
+        ORDER BY sf1.logrecno
+        LIMIT batch_size_param
+    )
+    UPDATE census.sf1_temp sf1
+    SET tbl = to_update.field_code
+    FROM to_update
+    WHERE sf1.state = to_update.state AND sf1.logrecno = to_update.logrecno
+    RETURNING sf1.state, sf1.logrecno;
+
+    GET DIAGNOSTICS updated_rows = ROW_COUNT;
+
+    end_time := clock_timestamp();
+    
+    RETURN QUERY SELECT state_param, last_logrecno_param, updated_rows, EXTRACT(EPOCH FROM end_time - start_time);
+END;
+$$ LANGUAGE plpgsql;
