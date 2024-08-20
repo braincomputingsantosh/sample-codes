@@ -1,0 +1,70 @@
+import psycopg2
+import yaml
+import logging
+
+# Configure logging
+logging.basicConfig(
+    filename='update_log.log',  # Log file name
+    level=logging.INFO,         # Log level
+    format='%(asctime)s - %(levelname)s - %(message)s',  # Log format
+    datefmt='%Y-%m-%d %H:%M:%S',  # Date format
+)
+
+# Load states from YAML file
+with open("config.yaml", 'r') as file:
+    config = yaml.safe_load(file)
+states_to_update = config['states_to_update']
+
+# Connect to your PostgreSQL database
+conn = psycopg2.connect("dbname=yourdbname user=yourusername password=yourpassword")
+cur = conn.cursor()
+
+batch_size = 100000
+total_updates = 0
+
+# Process each state
+for state in states_to_update:
+    logging.info(f"Processing state: {state}")
+    error_count = 0
+    last_processed_logrecno = 0  # Reset for each state
+    state_updates = 0
+
+    while True:
+        try:
+            # Call the PostgreSQL function
+            cur.execute("""
+                SELECT * FROM update_sf1_temp(%s, %s, %s)
+            """, (state, batch_size, last_processed_logrecno))
+
+            result = cur.fetchall()
+            
+            if not result:
+                logging.info(f"Completed processing for state {state}. Total updates: {state_updates}")
+                break
+            
+            # Unpack the results
+            for row in result:
+                state_param, last_processed_logrecno, updated_count, elapsed_time = row
+                logging.info(f"Processed batch for state {state_param}. Updated {updated_count} records. "
+                             f"Current logrecno: {last_processed_logrecno}. "
+                             f"Batch time: {elapsed_time:.2f} seconds")
+                
+            state_updates += len(result)
+            total_updates += len(result)
+            
+            # Commit the updates
+            conn.commit()
+            
+        except Exception as e:
+            logging.error(f"Error processing state {state}: {e}")
+            conn.rollback()
+            error_count += 1
+            if error_count > 10:
+                logging.error(f"Too many errors in state {state}, skipping to next state.")
+                break
+
+logging.info(f"All updates completed. Total records updated: {total_updates}")
+cur.close()
+conn.close()
+logging.info("Database connection closed. Exiting program.")
+sys.exit(0)
