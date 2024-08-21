@@ -1,0 +1,93 @@
+Here’s a sample `README.md` file that covers the points you’ve mentioned:
+
+---
+
+# Update Census SF1 Temp Table
+
+This repository contains a PostgreSQL function and a Python script designed to efficiently update rows in the `census.sf1_temp` table. The script processes updates in batches and logs the progress, making it suitable for large-scale data operations.
+
+## Function Overview
+
+### `update_sf1_temp`
+
+The `update_sf1_temp` function is a PostgreSQL function that updates the `census.sf1_temp` table. It is designed to be efficient and scalable, processing updates in configurable batches to reduce the load on the database.
+
+#### Function Description:
+
+- **Parameters:**
+  - `state_param (TEXT)`: The state abbreviation for which the updates should be applied.
+  - `batch_size_param (INT)`: The number of rows to process in each batch.
+  - `last_logrecno_param (INT)`: The starting logrecno value from which to begin processing.
+
+- **Returns:**
+  - A table containing:
+    - `state (TEXT)`: The state abbreviation.
+    - `logrecno (INT)`: The last processed logrecno.
+    - `updated_count (INT)`: The number of rows updated in the batch.
+    - `elapsed_time (NUMERIC)`: The time taken to process the batch.
+
+- **Process:**
+  - The function uses a Common Table Expression (CTE) to select the rows that need to be updated. It then updates the `tbl` column in the `census.sf1_temp` table for the selected rows and returns the result for logging and monitoring purposes.
+
+## Configuration
+
+### `config.yaml`
+
+The `config.yaml` file contains the list of states that need to be updated. This file should be updated before running the Python script to ensure that the correct states are processed.
+
+#### Example `config.yaml`:
+
+```yaml
+states_to_update:
+  - NY
+  - CA
+  - TX
+  - DC
+  - FL
+```
+
+- **states_to_update**: This section lists the state abbreviations (e.g., 'NY', 'CA', 'TX') for which the updates will be applied. Modify this list as needed to include all states that require updates.
+
+## Running the Python Script
+
+The Python script is designed to run the `update_sf1_temp` function in batches, logging each batch's progress to a log file. This script can be run in the background using the `nohup` command to allow it to continue running even after you log out of the system.
+
+### Prerequisites
+
+- Ensure that Python 3 and the required libraries (`psycopg2`, `PyYAML`, etc.) are installed.
+- Ensure that the PostgreSQL server is running and accessible.
+
+### Running the Script
+
+To run the Python script, follow these steps:
+
+1. Update the `config.yaml` file with the states that need to be processed.
+2. Run the script using the following command:
+
+```bash
+nohup python update_census_sf1_temp.py > update_log.out 2>&1 &
+```
+
+### Command Explanation:
+
+- **`nohup`**: Runs the command in the background and ensures it continues running even if you log out.
+- **`python update_census_sf1_temp.py`**: Executes the Python script.
+- **`> update_log.out`**: Redirects the standard output to `update_log.out` so you can monitor the progress.
+- **`2>&1`**: Redirects standard error to standard output, so both types of output are captured in the same log file.
+- **`&`**: Runs the process in the background.
+
+### Monitoring Progress
+
+- The script logs progress in real-time to `update_log.out`. You can view the log file using `tail -f update_log.out` to see the updates as they happen.
+
+### Stopping the Script
+
+- To stop the script, find the process ID (PID) using `ps aux | grep update_census_sf1_temp.py` and kill it with `kill -9 [PID]`.
+
+## Conclusion
+
+This setup allows for efficient batch processing of updates to the `census.sf1_temp` table, with flexible configuration and real-time monitoring. Adjust the `config.yaml` and batch size parameters as needed to fit your specific use case.
+
+---
+
+This `README.md` file provides clear instructions and descriptions for setting up and running your project, including an explanation of the PostgreSQL function, configuration details, and steps for executing the Python script.
