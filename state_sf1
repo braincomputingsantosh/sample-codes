@@ -3,38 +3,92 @@ import pandas as pd
 import sqlite3
 from pathlib import Path
 
+column_specs = [
+    {"name": "FILEID", "start": 1, "length": 6},
+    {"name": "STUSAB", "start": 7, "length": 2},
+    {"name": "SUMLEVEL", "start": 9, "length": 3},
+    {"name": "GEOCOMP", "start": 12, "length": 2},
+    {"name": "CHARITER", "start": 14, "length": 3},
+    {"name": "CIFSN", "start": 17, "length": 2},
+    {"name": "LOGRECNO", "start": 19, "length": 7},
+    {"name": "REGION", "start": 26, "length": 1},
+    {"name": "DIVISION", "start": 27, "length": 1},
+    {"name": "STATE", "start": 28, "length": 2},
+    {"name": "COUNTY", "start": 30, "length": 3},
+    {"name": "TRACT", "start": 55, "length": 6},
+    {"name": "COUNTYCC", "start": 101, "length": 2},
+    {"name": "COUNTYSC", "start": 103, "length": 2}
+]
+
+def parse_line(line):
+    parsed_data = {}
+    for field in column_specs:
+        start = field["start"] - 1
+        end = start + field["length"]
+        parsed_data[field["name"]] = line[start:end].strip()
+    return parsed_data
+
 def process_geo_file(file_path, output_dir):
-    # Extract state abbreviation from file name
-    state_abbr = file_path.stem[:2].upper()
+    state_abbr = os.path.basename(file_path)[:2].upper()
+    parsed_records = []
     
-    # Read the SF1 geo file into a pandas DataFrame
-    df = pd.read_csv(file_path, sep='|', header=None)  # Adjust separator if needed
+    with open(file_path, 'r', encoding='latin-1') as file:
+        for line in file:
+            parsed_record = parse_line(line)
+            parsed_records.append(parsed_record)
     
-    # Create SQLite database file name
-    db_file = output_dir / f"{state_abbr}_census_2010.db"
+    df = pd.DataFrame(parsed_records)
     
-    # Connect to SQLite database
+    db_file = os.path.join(output_dir, f"{state_abbr}_census_2010.db")
     conn = sqlite3.connect(db_file)
+    cursor = conn.cursor()
     
-    # Write the DataFrame to SQLite
-    df.to_sql('geo_data', conn, if_exists='replace', index=False)
+    create_table_sql = """
+    CREATE TABLE IF NOT EXISTS sf1_data_2010 (
+        FILEID TEXT,
+        STUSAB TEXT,
+        SUMLEVEL INTEGER,
+        GEOCOMP TEXT,
+        CHARITER TEXT,
+        CIFSN TEXT,
+        LOGRECNO INTEGER,
+        REGION TEXT,
+        DIVISION TEXT,
+        STATE TEXT,
+        COUNTY TEXT,
+        TRACT TEXT,
+        COUNTYCC TEXT,
+        COUNTYSC TEXT
+    )
+    """
+    cursor.execute(create_table_sql)
     
-    # Close the connection
+    insert_query = """
+    INSERT INTO sf1_data_2010 (FILEID, STUSAB, SUMLEVEL, GEOCOMP, CHARITER, CIFSN, LOGRECNO, REGION, DIVISION, STATE, COUNTY, TRACT, COUNTYCC, COUNTYSC)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+    
+    for _, record in df.iterrows():
+        data_tuple = (
+            record['FILEID'], record['STUSAB'], record['SUMLEVEL'], record['GEOCOMP'],
+            record['CHARITER'], record['CIFSN'], record['LOGRECNO'], record['REGION'],
+            record['DIVISION'], record['STATE'], record['COUNTY'], record['TRACT'],
+            record['COUNTYCC'], record['COUNTYSC']
+        )
+        try:
+            cursor.execute(insert_query, data_tuple)
+        except sqlite3.OperationalError as e:
+            print(f"SQLite Error: {e}")
+    
+    conn.commit()
     conn.close()
-    
-    print(f"Processed {file_path.name} and created {db_file.name}")
+    print(f"SF1 Geo data has been ingested for {state_abbr}")
 
 def main():
-    # Set the input directory containing SF1 geo files
-    input_dir = Path("path/to/your/input/folder")
-    
-    # Set the output directory for SQLite databases
-    output_dir = Path("path/to/your/output/folder")
-    
-    # Create output directory if it doesn't exist
+    input_dir = Path("/data/states")
+    output_dir = Path("/data/sqlite_dbs")
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Iterate through files in the input directory
     for file in input_dir.glob("*geo2010.sf1"):
         process_geo_file(file, output_dir)
 
