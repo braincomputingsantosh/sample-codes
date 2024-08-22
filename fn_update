@@ -1,0 +1,52 @@
+/*
+  This function performs an update on the `tbl` field of the `census.sf1_temp` table.
+
+  The update is designed to correct or standardize the values in the `tbl` field 
+  by aligning them with the corresponding `field_code` values from the `census.dd_seq_dhc` table. 
+  The `tbl` field in `census.sf1_temp` is intended to store specific code values that relate to 
+  segments of census data, and this function ensures that these codes are accurate and up-to-date.
+
+  The function operates as follows:
+  
+  1. **Common Table Expressions (CTEs):**
+     - The function begins by defining two CTEs:
+       a. `indexed_dd`: This CTE organizes data from the `census.dd_seq_dhc` table by creating a 
+          row index for each combination of `segment`, `tbl`, and `field_code`. The `ROW_NUMBER()` 
+          function is used to assign a unique index position within each partition of `segment` and `tbl`.
+       b. `to_update`: This CTE identifies rows in `census.sf1_temp` that require updates. It joins the 
+          `census.sf1_temp` table with the `indexed_dd` CTE on matching segments and tables, ensuring 
+          that only rows where the `tbl` field is currently incorrect (i.e., it does not match the `field_code`) 
+          are selected for update.
+
+  2. **Update Operation:**
+     - The main update operation takes place in the `UPDATE` statement. It updates the `tbl` field in 
+       `census.sf1_temp` for the selected rows, setting it to the correct `field_code` value retrieved 
+       from the `to_update` CTE. This ensures that the `tbl` field accurately reflects the intended data 
+       structure, according to the reference data in `census.dd_seq_dhc`.
+
+  3. **Batch Processing:**
+     - The function processes updates in batches, as determined by the `batch_size_param`. This approach 
+       limits the number of rows updated in a single transaction, which helps to manage system resources 
+       and minimize potential locking and I/O contention within the database. Batch processing is particularly 
+       useful when dealing with large datasets, as it allows for more controlled and incremental updates.
+
+  4. **Performance Considerations:**
+     - To further optimize performance, the function can be run in parallel across different states by 
+       specifying a `state_param` value. This parallel execution reduces the time required to update large 
+       datasets by distributing the workload and avoiding bottlenecks on specific rows or segments.
+     - The function also captures the start and end times of the update operation to calculate and return the 
+       elapsed time for each batch. This information is useful for monitoring performance and optimizing 
+       batch sizes for future runs.
+
+  5. **Return Values:**
+     - Upon completion of each batch, the function returns a summary of the operation, including:
+       a. The state processed (`state_param`).
+       b. The last processed `logrecno` value, allowing for sequential processing in subsequent runs.
+       c. The number of rows updated in the batch (`updated_count`).
+       d. The time taken to process the batch (`elapsed_time`), providing insight into the function's efficiency.
+
+  This function is intended to be used as part of a larger data maintenance or data cleansing operation, 
+  ensuring that the `census.sf1_temp` table remains consistent and accurate in its representation of census 
+  data. It is particularly useful in scenarios where the `tbl` field's accuracy is critical for downstream 
+  processing, analysis, or reporting.
+*/
