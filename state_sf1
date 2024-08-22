@@ -1,0 +1,42 @@
+import os
+import pandas as pd
+import sqlite3
+from pathlib import Path
+
+def process_geo_file(file_path, output_dir):
+    # Extract state abbreviation from file name
+    state_abbr = file_path.stem[:2].upper()
+    
+    # Read the SF1 geo file into a pandas DataFrame
+    df = pd.read_csv(file_path, sep='|', header=None)  # Adjust separator if needed
+    
+    # Create SQLite database file name
+    db_file = output_dir / f"{state_abbr}_census_2010.db"
+    
+    # Connect to SQLite database
+    conn = sqlite3.connect(db_file)
+    
+    # Write the DataFrame to SQLite
+    df.to_sql('geo_data', conn, if_exists='replace', index=False)
+    
+    # Close the connection
+    conn.close()
+    
+    print(f"Processed {file_path.name} and created {db_file.name}")
+
+def main():
+    # Set the input directory containing SF1 geo files
+    input_dir = Path("path/to/your/input/folder")
+    
+    # Set the output directory for SQLite databases
+    output_dir = Path("path/to/your/output/folder")
+    
+    # Create output directory if it doesn't exist
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Iterate through files in the input directory
+    for file in input_dir.glob("*geo2010.sf1"):
+        process_geo_file(file, output_dir)
+
+if __name__ == "__main__":
+    main()
