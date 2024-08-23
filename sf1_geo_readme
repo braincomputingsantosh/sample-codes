@@ -1,0 +1,140 @@
+# SF1 Geographic Data Processing Script
+
+This Python script processes SF1 (Summary File 1) geographic data from the 2010 U.S. Census and generates SQLite databases for each state.
+
+## Prerequisites
+
+- Python 3.x
+- SQLite3
+- Required Python libraries (install via pip):
+  - pathlib
+  - glob
+
+## Setup
+
+1. Clone this repository or download the script to your local machine.
+2. Ensure you have the raw SF1 2010 Geographic Data files. These should be named in the format `*geo2010.sf1`.
+
+## Usage
+
+1. Open a terminal and navigate to the script's directory.
+2. Run the script using Python:
+
+```
+python script_name.py
+```
+
+Replace `script_name.py` with the actual name of the Python script.
+
+3. The script will:
+   - Look for input files in `/home/SF1_2010_Geo_Data_Raw/`
+   - Create an output directory called `states_data/`
+   - Process each `*geo2010.sf1` file found in the input directory
+   - Generate a SQLite database for each state in the output directory
+
+## Output
+
+The script will create SQLite databases in the `states_data/` directory. Each database will contain a table with the following fields:
+
+- CD115
+- SLDU2
+- SLDU3
+- SLDU4
+- SLDL2
+- SLDL3
+- SLDL4
+- AIANHHSC
+- CSASC
+- CNECTASC
+- MEMI
+- NMEMI
+- PUMA
+- RESERVED
+
+## Error Handling
+
+If any SQLite errors occur during the process, they will be printed to the console.
+
+## Note
+
+This script assumes a specific structure for the input data and may need modifications if the raw data format changes. Always ensure you have backups of your raw data before processing.
+
+
+
+# SQLite to PostgreSQL Data Transfer Script
+
+This Python script transfers data from SQLite databases to a PostgreSQL database, specifically designed for handling 2010 US Census geographic data (SF1).
+
+## Prerequisites
+
+- Python 3.x
+- SQLite3
+- PostgreSQL
+- Required Python libraries (install via pip):
+  - sqlite3
+  - psycopg2
+  - os
+
+## Configuration
+
+Before running the script, configure the following variables at the top of the file:
+
+```python
+pg_db_name = 'cfpb'
+pg_user = '******'
+pg_password = '********'
+pg_host = '********'  # or your PostgreSQL server address
+pg_port = '5432'  # default PostgreSQL port
+pg_table = 'census.geo_sf1_2010'
+```
+
+Ensure you replace the asterisks with your actual PostgreSQL credentials.
+
+## Usage
+
+1. Place your SQLite database files (`.db`) in the directory `/home/SF1_2010_Geo_Data/`.
+2. Run the script:
+
+```
+python geo_sf1_insert.py
+```
+
+## What the Script Does
+
+1. Connects to the specified PostgreSQL database.
+2. Iterates through all `.db` files in the specified directory.
+3. For each file:
+   - Extracts the state name from the filename.
+   - Connects to the SQLite database.
+   - Fetches all data from the SQLite table.
+   - Inserts the data into the PostgreSQL table.
+   - Closes the SQLite connection.
+4. Closes the PostgreSQL connection after processing all files.
+
+## Output
+
+The script will print progress messages for each state:
+
+```
+Transferring data for {state}...
+Data transferred successfully for {state}.
+```
+
+Upon completion, it will print:
+
+```
+All data transferred successfully.
+```
+
+## Note on Data Structure
+
+- The script assumes that the SQLite databases and the PostgreSQL table have compatible structures.
+- The PostgreSQL table name is set to `census.geo_sf1_2010`. Ensure this table exists in your PostgreSQL database with the appropriate schema.
+
+## Error Handling
+
+The script doesn't include explicit error handling. Consider adding try-except blocks for robustness in a production environment.
+
+## Security Note
+
+Avoid hardcoding database credentials in the script for production use. Consider using environment variables or a secure configuration file.
