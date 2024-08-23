@@ -1,0 +1,61 @@
+from pyspark.sql import functions as F
+from pyspark.sql.window import Window
+import time
+
+# Load the tables into DataFrames (Assuming data is already loaded into these DataFrames)
+df_sf1_temp = spark.table("census.sf1_temp")
+df_dd_seq_dhc = spark.table("census.dd_seq_dhc")
+
+# Define parameters
+state_param = "NY"  # Example state
+batch_size_param = 50000  # Example batch size
+last_logrecno_param = 0  # Start from logrecno 0
+
+# Start timing the batch update
+start_time = time.time()
+
+# Step 1: Prepare the indexed_dd equivalent in Spark
+window_spec = Window.partitionBy("segment", "tbl").orderBy("sort_id")
+df_indexed_dd = df_dd_seq_dhc \
+    .withColumn("index_position", F.row_number().over(window_spec) - 1) \
+    .filter(F.col("field_code").isNotNull())
+
+# Step 2: Join sf1_temp with indexed_dd to identify rows that need to be updated
+df_to_update = df_sf1_temp.alias("sf1") \
+    .join(df_indexed_dd.alias("dd"),
+          (F.col("sf1.segment").cast("string") == F.col("dd.segment").cast("string")) &
+          (F.upper(F.split(F.col("sf1.tbl"), "-")[0]) == F.upper(F.col("dd.tbl"))) &
+          (F.split(F.col("sf1.tbl"), "-")[1].cast("int") == F.col("dd.index_position"))) \
+    .filter((F.col("sf1.state") == state_param) & 
+            (F.col("sf1.logrecno") > last_logrecno_param) & 
+            (F.col("sf1.tbl") != F.col("dd.field_code"))) \
+    .select(F.col("sf1.state"), F.col("sf1.logrecno"), F.col("dd.field_code"))
+
+# Step 3: Process updates in partitions instead of collecting them to the driver
+df_to_update = df_to_update.limit(batch_size_param)
+
+def update_partition(partition):
+    # Create a DataFrame for the partition
+    updates_df = spark.createDataFrame(partition, schema=df_to_update.schema)
+    
+    # Apply the updates directly within the partition
+    df_sf1_temp_updated = df_sf1_temp.alias("sf1") \
+        .join(updates_df.alias("upd"),
+              (F.col("sf1.state") == F.col("upd.state")) &
+              (F.col("sf1.logrecno") == F.col("upd.logrecno")),
+              "left") \
+        .withColumn("tbl", F.when(F.col("upd.field_code").isNotNull(), F.col("upd.field_code"))
+                            .otherwise(F.col("sf1.tbl"))) \
+        .drop("upd.field_code")
+    
+    # Write only the updated rows back to the original table
+    df_sf1_temp_updated.write.mode("append").saveAsTable("census.sf1_temp_updated")
+
+# Apply the update function to each partition
+df_to_update.foreachPartition(update_partition)
+
+# End timing the batch update
+end_time = time.time()
+elapsed_time = end_time - start_time
+
+print(f"Updated {df_to_update.count()} rows in {elapsed_time:.2f} seconds")
