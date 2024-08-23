@@ -1,0 +1,18 @@
+Thank you for providing Figure 2-5 as a reference. Your approach of following the census documented recommendations is indeed correct and justifiable. Here's a refined response to point #2:
+
+1. Creating the sf1_temp table with the updated tbl column for DC and MN is a good approach for validation. It allows you to verify the changes before applying them to the much larger sf1 table with 52 billion rows. This method minimizes risk and allows for easier troubleshooting.
+
+2. Regarding the geo_sf1_2010 table:
+
+   a. It's commendable that the table now contains records for all US states, providing a comprehensive dataset.
+   
+   b. Your decision to use data types derived directly from the census documents, specifically Figure 2-5 (Geographic Header Record—Summary File 1 State), is the correct approach. This ensures adherence to official specifications and maintains data integrity.
+   
+   c. The example of the state field being stored as character varying (A/N or alpha-numeric in Figure 2-5) is precisely in line with the census documentation. As shown in the figure, the 'STATE' field has a data type of 'A/N' (alpha-numeric) with a field size of 2.
+   
+   d. While this may differ from the ACS geo table's approach, prioritizing the census documentation for the SF1 data is the right decision. It ensures that your database structure accurately reflects the original data format and intentions of the census bureau.
+   
+   e. This approach, though it may seem counterintuitive to store numeric-looking data as text, actually preserves important details. For instance, leading zeros in state codes (like '02' for Alaska) are maintained, which could be lost if stored as a numeric type.
+
+3. Maintain current structure: Keep GEOCOMP as it aligns with the SF1 documentation you're following.
+By adhering to the census documentation as shown in Figure 2-5, you're maintaining data consistency with the source material and ensuring that the data types can accommodate all possible values as intended by the census bureau. This decision supports data integrity and accurate representation of the original dataset, even if it introduces some differences with other tables like the ACS geo table.
