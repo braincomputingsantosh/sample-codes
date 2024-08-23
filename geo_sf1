@@ -1,0 +1,54 @@
+import os
+import sqlite3
+import psycopg2
+from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+
+def transfer_data(sqlite_db_path, sqlite_table, pg_table):
+    # SQLite connection
+    conn_sqlite = sqlite3.connect(sqlite_db_path)
+    cursor_sqlite = conn_sqlite.cursor()
+
+    # Fetch data from SQLite
+    cursor_sqlite.execute(f"SELECT * FROM {sqlite_table}")
+    rows = cursor_sqlite.fetchall()
+
+    # PostgreSQL connection
+    conn_pg = psycopg2.connect(
+        dbname=pg_db_name,
+        user=pg_user,
+        password=pg_password,
+        host=pg_host,
+        port=pg_port,
+        options="-c client_encoding=utf-8"
+    )
+    conn_pg.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+    cursor_pg = conn_pg.cursor()
+
+    # Prepare INSERT statement for PostgreSQL
+    placeholders = ','.join(['%s'] * len(rows[0]))
+    insert_query = f"INSERT INTO {pg_table} VALUES ({placeholders})"
+
+    # Insert data into PostgreSQL
+    for row in rows:
+        cursor_pg.execute(insert_query, row)
+
+    # Close connections
+    cursor_sqlite.close()
+    conn_sqlite.close()
+    cursor_pg.close()
+    conn_pg.close()
+
+# Iterate through files in /home/data
+data_folder = '/home/data'
+for filename in os.listdir(data_folder):
+    if filename.endswith('.db'):
+        state = filename.split('_')[2].split('.')[0]  # Extract state from filename
+        sqlite_db_path = os.path.join(data_folder, filename)
+        sqlite_table = 'sfi_data_2010'  # Adjust if table name varies
+        pg_table = f'census_geo_sfi_2010_{state.lower()}'  # Create state-specific table name
+        
+        print(f"Transferring data for {state}...")
+        transfer_data(sqlite_db_path, sqlite_table, pg_table)
+        print(f"Data transferred successfully for {state}.")
+
+print("All data transferred successfully.")
