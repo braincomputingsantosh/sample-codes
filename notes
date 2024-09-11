@@ -1,34 +1,21 @@
-CREATE OR REPLACE FUNCTION sv3_rpt.workday(
-    start_date date,
-    num_days integer
+WITH test_results AS (
+    SELECT 
+        test_date,
+        num_days,
+        sv3_rpt.workday_optimized(test_date, num_days) AS result_date
+    FROM (
+        VALUES 
+            ('2023-09-01'::date, 5),
+            ('2023-09-01'::date, 10),
+            ('2023-12-20'::date, 15),
+            ('2024-01-01'::date, 20),
+            ('2024-02-29'::date, 30)
+    ) AS test_cases(test_date, num_days)
 )
-RETURNS date
-LANGUAGE plpgsql
-COST 100
-VOLATILE PARALLEL UNSAFE
-AS $BODY$
-DECLARE
-    current_date DATE := start_date;
-    days_added INTEGER := 0;
-    business_days INTEGER[];
-BEGIN
-    -- Fetch all business days for the potential date range in one query
-    SELECT ARRAY_AGG(date_value::date)
-    INTO business_days
-    FROM sv3_res.date_dimension
-    WHERE date_value BETWEEN start_date AND start_date + (num_days * 2)::integer
-    AND is_business_day = TRUE;
-
-    WHILE days_added < num_days LOOP
-        IF current_date = ANY(business_days) THEN
-            days_added := days_added + 1;
-        END IF;
-        
-        IF days_added < num_days THEN
-            current_date := current_date + 1;
-        END IF;
-    END LOOP;
-
-    RETURN current_date;
-END;
-$BODY$;
+SELECT 
+    tr.*,
+    dd.is_business
+FROM 
+    test_results tr
+LEFT JOIN 
+    sv3_ses.date_dimension dd ON tr.result_date = dd.date_value;
