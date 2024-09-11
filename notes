@@ -1,103 +1,66 @@
-CREATE OR REPLACE FUNCTION sv3_rpt.workday_optimized(
-    start_date date,
-    num_days integer
-)
-RETURNS date
-LANGUAGE plpgsql
-COST 100
-VOLATILE PARALLEL UNSAFE
-AS $BODY$
-DECLARE
-    current_date DATE := start_date;
-    days_added INTEGER := 0;
-    business_days DATE[];
-BEGIN
-    -- Fetch all business days for the potential date range in one query
-    SELECT ARRAY_AGG(date_value::date)
-    INTO business_days
-    FROM sv3_ses.date_dimension
-    WHERE date_value BETWEEN start_date AND start_date + (num_days * 2)::integer
-    AND is_business = B'1'::bit(1);
-
-    WHILE days_added < num_days LOOP
-        IF current_date = ANY(business_days) THEN
-            days_added := days_added + 1;
-        END IF;
-        
-        IF days_added < num_days THEN
-            current_date := current_date + 1;
-        END IF;
-    END LOOP;
-
-    RETURN current_date;
-END;
-$BODY$;
-
-
-
-WITH test_results AS (
-    SELECT 
-        test_date,
-        num_days,
-        sv3_rpt.workday_optimized(test_date, num_days) AS result_date
-    FROM (
-        VALUES 
-            ('2023-09-01'::date, 5),
-            ('2023-09-01'::date, 10),
-            ('2023-12-20'::date, 15),
-            ('2024-01-01'::date, 20),
-            ('2024-02-29'::date, 30)
-    ) AS test_cases(test_date, num_days)
-)
-SELECT 
-    tr.*,
-    dd.is_business
-FROM 
-    test_results tr
-LEFT JOIN 
-    sv3_ses.date_dimension dd ON tr.result_date = dd.date_value;
-
-
-
-
-WITH date_series AS (
-    SELECT date_value::date
-    FROM generate_series(
-        (SELECT MIN(LEAST(COALESCE(Exam_Analysis_Finalized_date, '9999-12-31'), COALESCE(Draft_to_Prudential_date, '9999-12-31'))) FROM sv3_rpt.exams),
-        (SELECT MAX(GREATEST(COALESCE(Exam_Analysis_Finalized_date, '0001-01-01'), COALESCE(Draft_to_Prudential_date, '0001-01-01'))) + INTERVAL '45 days' FROM sv3_rpt.exams),
-        '1 day'
-    ) AS date_series(date_value)
-),
-business_days AS (
-    SELECT date_value
-    FROM date_series
-    JOIN sv3_ses.date_dimension dd ON date_series.date_value = dd.date_value
-    WHERE dd.is_business = B'1'::bit(1)
-),
-numbered_business_days AS (
-    SELECT date_value, ROW_NUMBER() OVER (ORDER BY date_value) AS rn
-    FROM business_days
-),
-exams_with_dates AS (
+WITH date_calculations AS (
     SELECT
-        e.*,
+        event_id,
+        exam_mail_date,
+        draft_to_prudential_date,
+        exam_analysis_finalized_date,
         CASE
-            WHEN e.Exam_Analysis_Finalized_date IS NOT NULL AND e.Draft_to_Prudential_date IS NULL THEN e.Exam_Analysis_Finalized_date
-            WHEN e.Exam_Analysis_Finalized_date IS NOT NULL AND e.Draft_to_Prudential_date IS NOT NULL THEN e.Draft_to_Prudential_date
-            WHEN e.Exam_Analysis_Finalized_date IS NULL AND e.Draft_to_Prudential_date IS NOT NULL THEN e.Draft_to_Prudential_date
+            WHEN draft_to_prudential_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
             ELSE NULL
-        END AS start_date
-    FROM sv3_rpt.exams e
+        END AS "Prud Count",
+        CASE
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
+            ELSE NULL
+        END AS "Non Prud Count",
+        CASE
+            WHEN draft_to_prudential_date IS NOT NULL THEN exam_analysis_finalized_date
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_analysis_finalized_date
+            ELSE NULL
+        END AS start_date,
+        CASE
+            WHEN draft_to_prudential_date IS NOT NULL THEN draft_to_prudential_date
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_mail_date
+            ELSE NULL
+        END AS end_date
+    FROM sv3_rpt.exams
+),
+business_days_count AS (
+    SELECT
+        dc.*,
+        sv3_rpt.days_between(dc.start_date, dc.end_date, 'B') AS days_between,
+        sv3_rpt.workday_optimized(dc.start_date::date, 45) AS gpra_due_date
+    FROM date_calculations dc
+    WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
 )
 SELECT
-    e.Event_ID,
-    e.Entity,
-    e.Exam_Analysis_Finalized_date,
-    e.Draft_to_Prudential_date,
-    e.Draft_From_Prudential_date,
-    e.GPRA_Due_Date,
-    COALESCE(bd_end.date_value, e.start_date) AS GPRA_Calculated_Date
-FROM exams_with_dates e
-LEFT JOIN numbered_business_days bd_start ON e.start_date = bd_start.date_value
-LEFT JOIN numbered_business_days bd_end ON bd_end.rn = bd_start.rn + 45
-WHERE e.start_date IS NOT NULL;
+    bdc.exam_mail_date,
+    bdc.draft_to_prudential_date,
+    bdc.exam_analysis_finalized_date,
+    bdc.event_id,
+    bdc."Prud Count",
+    bdc."Non Prud Count",
+    bdc.gpra_due_date AS "GPRA Due Date",
+    bdc.days_between AS "GPRA Days",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.days_between <= 45 THEN 1
+        WHEN bdc.draft_to_prudential_date IS NULL AND bdc.days_between <= 45 THEN 1
+        ELSE 0
+    END AS "GPRA On Time",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NOT NULL THEN bdc.days_between
+        ELSE NULL
+    END AS "GPRA Prud Rev Days",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.days_between <= 45 THEN 1
+        ELSE 0
+    END AS "On Time Prud Rev",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NULL THEN bdc.days_between
+        ELSE NULL
+    END AS "GPRA Non Prud Days",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NULL AND bdc.days_between <= 45 THEN 1
+        ELSE 0
+    END AS "On Time Non Prud"
+FROM business_days_count bdc
+ORDER BY bdc.event_id DESC
