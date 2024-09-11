@@ -56,3 +56,48 @@ FROM
     test_results tr
 LEFT JOIN 
     sv3_ses.date_dimension dd ON tr.result_date = dd.date_value;
+
+
+
+
+WITH date_series AS (
+    SELECT date_value::date
+    FROM generate_series(
+        (SELECT MIN(LEAST(COALESCE(Exam_Analysis_Finalized_date, '9999-12-31'), COALESCE(Draft_to_Prudential_date, '9999-12-31'))) FROM sv3_rpt.exams),
+        (SELECT MAX(GREATEST(COALESCE(Exam_Analysis_Finalized_date, '0001-01-01'), COALESCE(Draft_to_Prudential_date, '0001-01-01'))) + INTERVAL '45 days' FROM sv3_rpt.exams),
+        '1 day'
+    ) AS date_series(date_value)
+),
+business_days AS (
+    SELECT date_value
+    FROM date_series
+    JOIN sv3_ses.date_dimension dd ON date_series.date_value = dd.date_value
+    WHERE dd.is_business = B'1'::bit(1)
+),
+numbered_business_days AS (
+    SELECT date_value, ROW_NUMBER() OVER (ORDER BY date_value) AS rn
+    FROM business_days
+),
+exams_with_dates AS (
+    SELECT
+        e.*,
+        CASE
+            WHEN e.Exam_Analysis_Finalized_date IS NOT NULL AND e.Draft_to_Prudential_date IS NULL THEN e.Exam_Analysis_Finalized_date
+            WHEN e.Exam_Analysis_Finalized_date IS NOT NULL AND e.Draft_to_Prudential_date IS NOT NULL THEN e.Draft_to_Prudential_date
+            WHEN e.Exam_Analysis_Finalized_date IS NULL AND e.Draft_to_Prudential_date IS NOT NULL THEN e.Draft_to_Prudential_date
+            ELSE NULL
+        END AS start_date
+    FROM sv3_rpt.exams e
+)
+SELECT
+    e.Event_ID,
+    e.Entity,
+    e.Exam_Analysis_Finalized_date,
+    e.Draft_to_Prudential_date,
+    e.Draft_From_Prudential_date,
+    e.GPRA_Due_Date,
+    COALESCE(bd_end.date_value, e.start_date) AS GPRA_Calculated_Date
+FROM exams_with_dates e
+LEFT JOIN numbered_business_days bd_start ON e.start_date = bd_start.date_value
+LEFT JOIN numbered_business_days bd_end ON bd_end.rn = bd_start.rn + 45
+WHERE e.start_date IS NOT NULL;
