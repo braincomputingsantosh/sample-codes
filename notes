@@ -1,30 +1,39 @@
-business_days_count AS (
-    SELECT
-        dc.*,
-        CASE
-            WHEN dc.start_date::date < '1000-01-01' OR dc.start_date::date > '9999-12-31' OR
-                 dc.end_date::date < '1000-01-01' OR dc.end_date::date > '9999-12-31' THEN NULL
-            ELSE sv3_rpt.days_between(dc.start_date::date, dc.end_date::date, 'B')
-        END AS days_between,
-        CASE
-            WHEN dc.start_date::date < '1000-01-01' OR dc.start_date::date > '9999-12-31' THEN NULL
-            WHEN dc.start_date::date + INTERVAL '45 years' > '9999-12-31' THEN '9999-12-31'::date
-            ELSE sv3_rpt.workday_optimized(dc.start_date::date, 45)
-        END AS gpra_due_date
-    FROM date_calculations dc
-    WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
-)
+CREATE OR REPLACE FUNCTION sv3_rpt.workday_optimized(
+    start_date DATE,
+    num_days INTEGER
+) 
+RETURNS DATE
+LANGUAGE plpgsql
+AS $BODY$
+DECLARE
+    current_date DATE := start_date;
+    days_added INTEGER := 0;
+    business_days DATE[];
+    max_valid_date DATE := '9999-12-31';  -- Maximum allowable date to avoid overflow
+BEGIN
+    -- Fetch all business days for the potential date range in one query
+    SELECT ARRAY_AGG(date_value::date)
+    INTO business_days
+    FROM sv3.ses_date_dimension
+    WHERE date_value BETWEEN start_date AND LEAST(start_date + (num_days * 2)::integer, max_valid_date)
+    AND is_business = B'1'::bit(1);
 
+    -- Main loop to count business days
+    WHILE days_added < num_days LOOP
+        -- Check if the current date is within the list of business days
+        IF current_date = ANY(business_days) THEN
+            days_added := days_added + 1;
+        END IF;
 
-WHERE dc.start_date::date BETWEEN '1000-01-01' AND '9999-12-31'
-  AND dc.end_date::date BETWEEN '1000-01-01' AND '9999-12-31'
+        -- Increment the current date, but ensure it stays within the valid date range
+        IF days_added < num_days THEN
+            IF current_date + 1 > max_valid_date THEN
+                RAISE EXCEPTION 'Date out of range: cannot exceed %', max_valid_date;
+            END IF;
+            current_date := current_date + 1;
+        END IF;
+    END LOOP;
 
-
-SELECT *
-FROM sv3_rpt.exams
-WHERE exam_analysis_finalized_date::date < '1000-01-01'
-   OR exam_analysis_finalized_date::date > '9999-12-31'
-   OR draft_to_prudential_date::date < '1000-01-01'
-   OR draft_to_prudential_date::date > '9999-12-31'
-   OR exam_mail_date::date < '1000-01-01'
-   OR exam_mail_date::date > '9999-12-31';
+    RETURN current_date;
+END;
+$BODY$;
