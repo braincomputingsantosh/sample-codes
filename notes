@@ -72,3 +72,17 @@ FROM
     exam_dates
 ORDER BY
     event_id DESC;
+
+
+*************************************
+
+It seems that the issue is specifically happening for the date 2201-05-18, which is clearly an invalid date and way beyond what we would expect (looks like a typo for 2021-05-18). This is causing the date to exceed the 9999-12-31 limit when processed by workday_optimized.
+
+Fix:
+
+You need to handle such invalid dates more gracefully, perhaps by filtering them out or correcting them if possible.
+
+Step-by-Step Fix:
+
+	1.	Filter out invalid dates: Let’s add a check in the query to only process valid dates. Dates beyond a reasonable limit (e.g., 2099-12-31) can be filtered out or handled as an error condition.
+	2.	Correct the specific invalid date: If the issue is due to data entry mistakes, you can either correct it in the source data or handle it explicitly in the query.
