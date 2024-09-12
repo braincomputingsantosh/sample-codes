@@ -20,7 +20,21 @@ WITH exam_dates AS (
         CASE 
             WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN TRUE
             ELSE FALSE
-        END AS valid_dates_for_days_between
+        END AS valid_dates_for_days_between,
+        -- Calculate GPRA Due Date
+        CASE 
+            WHEN exam_analysis_finalized_date + INTERVAL '45 days' <= '9999-12-31' THEN 
+                sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
+            ELSE
+                '9999-12-31'::DATE  -- Return a safe default date if out of range
+        END AS "GPRA Due Date",
+        -- Calculate GPRA Days
+        CASE 
+            WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN
+                sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B')
+            ELSE
+                NULL  -- Return NULL if dates are out of valid range
+        END AS "GPRA Days"
     FROM
         sv3_rpt.exams
     WHERE
@@ -34,20 +48,8 @@ SELECT
     event_id,
     "Prud Count",
     "Non Prud Count",
-    -- Call the function only if valid_date_for_workday is TRUE
-    CASE 
-        WHEN valid_date_for_workday THEN 
-            sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
-        ELSE
-            '9999-12-31'::DATE  -- Return a safe default date if out of range
-    END AS "GPRA Due Date",
-    -- Call the function only if valid_dates_for_days_between is TRUE
-    CASE 
-        WHEN valid_dates_for_days_between THEN
-            sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B')
-        ELSE
-            NULL  -- Return NULL if dates are out of valid range
-    END AS "GPRA Days",
+    "GPRA Due Date",
+    "GPRA Days",
     -- Use CASE only once by calculating conditions based on pre-calculated values
     CASE 
         WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" <= 45 THEN 1
