@@ -1,64 +1,54 @@
-WITH date_calculations AS (
+WITH exam_dates AS (
     SELECT
-        event_id,
         exam_mail_date,
         draft_to_prudential_date,
         exam_analysis_finalized_date,
+        event_id,
         CASE 
             WHEN draft_to_prudential_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
-            ELSE NULL
+            ELSE 0
         END AS "Prud Count",
-        CASE
-            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
-            ELSE NULL
-        END AS "Non Prud Count",
-        CASE
-            WHEN draft_to_prudential_date IS NOT NULL THEN exam_analysis_finalized_date
-            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_analysis_finalized_date
-        END AS start_date,
-        CASE
-            WHEN draft_to_prudential_date IS NOT NULL THEN draft_to_prudential_date
-            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_mail_date
-        END AS end_date
-    FROM sv3_rpt.exams
-),
-business_days_count AS (
-    SELECT
         CASE 
-            WHEN dc.start_date::date = '1000-01-01' OR dc.start_date::date = '9999-12-31' OR dc.end_date::date = '1000-01-01' OR dc.end_date::date = '9999-12-31' THEN NULL
-            ELSE sv3_rpt.workday_optimized(dc.start_date, 45)
-        END AS gpra_due_date,
-        CASE
-            WHEN dc.start_date::date = '1000-01-01' OR dc.start_date::date = '9999-12-31' OR dc.end_date::date = '1000-01-01' OR dc.end_date::date = '9999-12-31' THEN NULL
-            ELSE sv3_rpt.workday_optimized(dc.start_date, dc.end_date, 45)
-        END AS gpra_days_between
-    FROM date_calculations dc
-    WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
+            ELSE 0
+        END AS "Non Prud Count",
+        -- Pre-calculate GPRA Due Date only once
+        sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45) AS "GPRA Due Date",
+        -- Pre-calculate days between finalized date and prudential date or mail date only once
+        sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B') AS "GPRA Days"
+    FROM
+        sv3_rpt.exams
+    WHERE
+        exam_analysis_finalized_date IS NOT NULL
 )
+
 SELECT
-    bdc.exam_mail_date,
-    bdc.draft_to_prudential_date,
-    bdc.exam_analysis_finalized_date,
-    bdc.event_id,
-    bdc."Prud Count",
-    bdc."Non Prud Count",
-    bdc.gpra_due_date AS "GPRA Due Date",
-    bdc.gpra_days_between AS "GPRA Days",
+    exam_mail_date,
+    draft_to_prudential_date,
+    exam_analysis_finalized_date,
+    event_id,
+    "Prud Count",
+    "Non Prud Count",
+    "GPRA Due Date",
+    "GPRA Days",
+    -- Use CASE only once by calculating conditions based on pre-calculated values
     CASE 
-        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between <= 45 THEN 1
+        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" <= 45 THEN 1
         ELSE 0
     END AS "GPRA On Time",
-    CASE
-        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between > 45 THEN 1
+    CASE 
+        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" > 45 THEN 1
         ELSE 0
     END AS "GPRA Prud Rev Days",
-    CASE
-        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between <= 45 THEN 1
+    CASE 
+        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" <= 45 THEN 1
         ELSE 0
     END AS "On Time Prud Rev",
-    CASE
-        WHEN bdc.draft_to_prudential_date IS NULL AND bdc.gpra_days_between <= 45 THEN 1
+    CASE 
+        WHEN draft_to_prudential_date IS NULL AND "GPRA Days" <= 45 THEN 1
         ELSE 0
-    END AS "Non Prud Days"
-FROM business_days_count bdc
-ORDER BY bdc.event_id DESC;
+    END AS "On Time Non Prud"
+FROM
+    exam_dates
+ORDER BY
+    event_id DESC;
