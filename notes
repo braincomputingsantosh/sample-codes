@@ -12,10 +12,20 @@ WITH exam_dates AS (
             WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
             ELSE 0
         END AS "Non Prud Count",
-        -- Pre-calculate GPRA Due Date only once
-        sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45) AS "GPRA Due Date",
+        -- Ensure exam_analysis_finalized_date is within a valid range to avoid date overflow
+        CASE
+            WHEN exam_analysis_finalized_date + INTERVAL '45 days' <= '9999-12-31' THEN 
+                sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
+            ELSE 
+                '9999-12-31'::DATE  -- Return a safe default date if out of range
+        END AS "GPRA Due Date",
         -- Pre-calculate days between finalized date and prudential date or mail date only once
-        sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B') AS "GPRA Days"
+        CASE
+            WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN
+                sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B')
+            ELSE
+                NULL  -- Return NULL if dates are out of valid range
+        END AS "GPRA Days"
     FROM
         sv3_rpt.exams
     WHERE
