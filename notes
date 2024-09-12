@@ -12,23 +12,23 @@ WITH exam_dates AS (
             WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
             ELSE 0
         END AS "Non Prud Count",
-        -- Add a separate column for checking if the date is valid
+        -- Filter out invalid or far future dates
         CASE 
-            WHEN exam_analysis_finalized_date + INTERVAL '45 days' <= '9999-12-31' THEN TRUE
+            WHEN exam_analysis_finalized_date BETWEEN '1900-01-01' AND '2099-12-31' THEN TRUE
             ELSE FALSE
         END AS valid_date_for_workday,
         CASE 
-            WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN TRUE
+            WHEN exam_analysis_finalized_date <= '2099-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '2099-12-31' THEN TRUE
             ELSE FALSE
         END AS valid_dates_for_days_between,
-        -- Calculate GPRA Due Date
+        -- Calculate GPRA Due Date only for valid dates
         CASE 
             WHEN exam_analysis_finalized_date + INTERVAL '45 days' <= '9999-12-31' THEN 
                 sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
             ELSE
                 '9999-12-31'::DATE  -- Return a safe default date if out of range
         END AS "GPRA Due Date",
-        -- Calculate GPRA Days
+        -- Calculate GPRA Days only for valid dates
         CASE 
             WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN
                 sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B')
@@ -39,6 +39,7 @@ WITH exam_dates AS (
         sv3_rpt.exams
     WHERE
         exam_analysis_finalized_date IS NOT NULL
+        AND exam_analysis_finalized_date BETWEEN '1900-01-01' AND '2099-12-31'  -- Exclude obviously invalid dates
 )
 
 SELECT
