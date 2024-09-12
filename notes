@@ -1,13 +1,15 @@
-CASE
-    WHEN draft_to_prudential_date IS NOT NULL THEN
+business_days_count AS (
+    SELECT
+        dc.*,
         CASE
-            WHEN exam_analysis_finalized_date < '1000-01-01' OR exam_analysis_finalized_date > '9999-12-31' THEN NULL
-            ELSE sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
-        END
-    WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN
+            WHEN dc.start_date::date < '1000-01-01' OR dc.start_date::date > '9999-12-31' OR
+                 dc.end_date::date < '1000-01-01' OR dc.end_date::date > '9999-12-31' THEN NULL
+            ELSE sv3_rpt.days_between(dc.start_date::date, dc.end_date::date, 'B')
+        END AS days_between,
         CASE
-            WHEN exam_analysis_finalized_date < '1000-01-01' OR exam_analysis_finalized_date > '9999-12-31' THEN NULL
-            ELSE sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
-        END
-    ELSE NULL
-END AS "GPRA Due Date",
+            WHEN dc.start_date::date < '1000-01-01' OR dc.start_date::date > '9999-12-31' THEN NULL
+            ELSE sv3_rpt.workday_optimized(dc.start_date::date, 45)
+        END AS gpra_due_date
+    FROM date_calculations dc
+    WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
+)
