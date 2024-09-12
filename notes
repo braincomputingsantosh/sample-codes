@@ -8,6 +8,7 @@ business_days_count AS (
         END AS days_between,
         CASE
             WHEN dc.start_date::date < '1000-01-01' OR dc.start_date::date > '9999-12-31' THEN NULL
+            WHEN dc.start_date::date + INTERVAL '45 years' > '9999-12-31' THEN '9999-12-31'::date
             ELSE sv3_rpt.workday_optimized(dc.start_date::date, 45)
         END AS gpra_due_date
     FROM date_calculations dc
