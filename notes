@@ -14,3 +14,17 @@ business_days_count AS (
     FROM date_calculations dc
     WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
 )
+
+
+WHERE dc.start_date::date BETWEEN '1000-01-01' AND '9999-12-31'
+  AND dc.end_date::date BETWEEN '1000-01-01' AND '9999-12-31'
+
+
+SELECT *
+FROM sv3_rpt.exams
+WHERE exam_analysis_finalized_date::date < '1000-01-01'
+   OR exam_analysis_finalized_date::date > '9999-12-31'
+   OR draft_to_prudential_date::date < '1000-01-01'
+   OR draft_to_prudential_date::date > '9999-12-31'
+   OR exam_mail_date::date < '1000-01-01'
+   OR exam_mail_date::date > '9999-12-31';
