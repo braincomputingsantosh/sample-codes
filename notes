@@ -1,39 +1,64 @@
-CREATE OR REPLACE FUNCTION sv3_rpt.workday_optimized(
-    start_date DATE,
-    num_days INTEGER
-) 
-RETURNS DATE
-LANGUAGE plpgsql
-AS $BODY$
-DECLARE
-    current_date DATE := start_date;
-    days_added INTEGER := 0;
-    business_days DATE[];
-    max_valid_date DATE := '9999-12-31';  -- Maximum allowable date to avoid overflow
-BEGIN
-    -- Fetch all business days for the potential date range in one query
-    SELECT ARRAY_AGG(date_value::date)
-    INTO business_days
-    FROM sv3.ses_date_dimension
-    WHERE date_value BETWEEN start_date AND LEAST(start_date + (num_days * 2)::integer, max_valid_date)
-    AND is_business = B'1'::bit(1);
-
-    -- Main loop to count business days
-    WHILE days_added < num_days LOOP
-        -- Check if the current date is within the list of business days
-        IF current_date = ANY(business_days) THEN
-            days_added := days_added + 1;
-        END IF;
-
-        -- Increment the current date, but ensure it stays within the valid date range
-        IF days_added < num_days THEN
-            IF current_date + 1 > max_valid_date THEN
-                RAISE EXCEPTION 'Date out of range: cannot exceed %', max_valid_date;
-            END IF;
-            current_date := current_date + 1;
-        END IF;
-    END LOOP;
-
-    RETURN current_date;
-END;
-$BODY$;
+WITH date_calculations AS (
+    SELECT
+        event_id,
+        exam_mail_date,
+        draft_to_prudential_date,
+        exam_analysis_finalized_date,
+        CASE 
+            WHEN draft_to_prudential_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
+            ELSE NULL
+        END AS "Prud Count",
+        CASE
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
+            ELSE NULL
+        END AS "Non Prud Count",
+        CASE
+            WHEN draft_to_prudential_date IS NOT NULL THEN exam_analysis_finalized_date
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_analysis_finalized_date
+        END AS start_date,
+        CASE
+            WHEN draft_to_prudential_date IS NOT NULL THEN draft_to_prudential_date
+            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL THEN exam_mail_date
+        END AS end_date
+    FROM sv3_rpt.exams
+),
+business_days_count AS (
+    SELECT
+        CASE 
+            WHEN dc.start_date::date = '1000-01-01' OR dc.start_date::date = '9999-12-31' OR dc.end_date::date = '1000-01-01' OR dc.end_date::date = '9999-12-31' THEN NULL
+            ELSE sv3_rpt.workday_optimized(dc.start_date, 45)
+        END AS gpra_due_date,
+        CASE
+            WHEN dc.start_date::date = '1000-01-01' OR dc.start_date::date = '9999-12-31' OR dc.end_date::date = '1000-01-01' OR dc.end_date::date = '9999-12-31' THEN NULL
+            ELSE sv3_rpt.workday_optimized(dc.start_date, dc.end_date, 45)
+        END AS gpra_days_between
+    FROM date_calculations dc
+    WHERE dc.start_date IS NOT NULL AND dc.end_date IS NOT NULL
+)
+SELECT
+    bdc.exam_mail_date,
+    bdc.draft_to_prudential_date,
+    bdc.exam_analysis_finalized_date,
+    bdc.event_id,
+    bdc."Prud Count",
+    bdc."Non Prud Count",
+    bdc.gpra_due_date AS "GPRA Due Date",
+    bdc.gpra_days_between AS "GPRA Days",
+    CASE 
+        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between <= 45 THEN 1
+        ELSE 0
+    END AS "GPRA On Time",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between > 45 THEN 1
+        ELSE 0
+    END AS "GPRA Prud Rev Days",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NOT NULL AND bdc.gpra_days_between <= 45 THEN 1
+        ELSE 0
+    END AS "On Time Prud Rev",
+    CASE
+        WHEN bdc.draft_to_prudential_date IS NULL AND bdc.gpra_days_between <= 45 THEN 1
+        ELSE 0
+    END AS "Non Prud Days"
+FROM business_days_count bdc
+ORDER BY bdc.event_id DESC;
