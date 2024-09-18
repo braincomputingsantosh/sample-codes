@@ -1,88 +1,122 @@
-WITH exam_dates AS (
-    SELECT
-        exam_mail_date,
-        draft_to_prudential_date,
-        exam_analysis_finalized_date,
-        event_id,
-        CASE 
-            WHEN draft_to_prudential_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
-            ELSE 0
-        END AS "Prud Count",
-        CASE 
-            WHEN draft_to_prudential_date IS NULL AND exam_mail_date IS NOT NULL AND exam_analysis_finalized_date IS NOT NULL THEN 1
-            ELSE 0
-        END AS "Non Prud Count",
-        -- Filter out invalid or far future dates
-        CASE 
-            WHEN exam_analysis_finalized_date BETWEEN '1900-01-01' AND '2099-12-31' THEN TRUE
-            ELSE FALSE
-        END AS valid_date_for_workday,
-        CASE 
-            WHEN exam_analysis_finalized_date <= '2099-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '2099-12-31' THEN TRUE
-            ELSE FALSE
-        END AS valid_dates_for_days_between,
-        -- Calculate GPRA Due Date only for valid dates
-        CASE 
-            WHEN exam_analysis_finalized_date + INTERVAL '45 days' <= '9999-12-31' THEN 
-                sv3_rpt.workday_optimized(exam_analysis_finalized_date::date, 45)
-            ELSE
-                '9999-12-31'::DATE  -- Return a safe default date if out of range
-        END AS "GPRA Due Date",
-        -- Calculate GPRA Days only for valid dates
-        CASE 
-            WHEN exam_analysis_finalized_date <= '9999-12-31' AND COALESCE(draft_to_prudential_date::date, exam_mail_date::date) <= '9999-12-31' THEN
-                sv3_rpt.days_between(exam_analysis_finalized_date::date, COALESCE(draft_to_prudential_date::date, exam_mail_date::date), 'B')
-            ELSE
-                NULL  -- Return NULL if dates are out of valid range
-        END AS "GPRA Days"
-    FROM
-        sv3_rpt.exams
-    WHERE
-        exam_analysis_finalized_date IS NOT NULL
-        AND exam_analysis_finalized_date BETWEEN '1900-01-01' AND '2099-12-31'  -- Exclude obviously invalid dates
-)
+# Databricks on AWS: A Comprehensive Guide
 
-SELECT
-    exam_mail_date,
-    draft_to_prudential_date,
-    exam_analysis_finalized_date,
-    event_id,
-    "Prud Count",
-    "Non Prud Count",
-    "GPRA Due Date",
-    "GPRA Days",
-    -- Use CASE only once by calculating conditions based on pre-calculated values
-    CASE 
-        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" <= 45 THEN 1
-        ELSE 0
-    END AS "GPRA On Time",
-    CASE 
-        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" > 45 THEN 1
-        ELSE 0
-    END AS "GPRA Prud Rev Days",
-    CASE 
-        WHEN draft_to_prudential_date IS NOT NULL AND "GPRA Days" <= 45 THEN 1
-        ELSE 0
-    END AS "On Time Prud Rev",
-    CASE 
-        WHEN draft_to_prudential_date IS NULL AND "GPRA Days" <= 45 THEN 1
-        ELSE 0
-    END AS "On Time Non Prud"
-FROM
-    exam_dates
-ORDER BY
-    event_id DESC;
+## Introduction
 
+Databricks on AWS is a unified data analytics platform that accelerates innovation by unifying data science, engineering, and business under a collaborative cloud-based environment. Built on top of Apache Spark™, Databricks provides a scalable and interactive workspace for big data processing and machine learning.
 
-*************************************
+## Prerequisites
 
-It seems that the issue is specifically happening for the date 2201-05-18, which is clearly an invalid date and way beyond what we would expect (looks like a typo for 2021-05-18). This is causing the date to exceed the 9999-12-31 limit when processed by workday_optimized.
+Before deploying Databricks on AWS, ensure you have the following:
 
-Fix:
+- **AWS Account**: An active AWS account with sufficient permissions to create resources.
+- **IAM Roles and Permissions**: Proper IAM roles configured for Databricks deployment.
+- **Networking Knowledge**: Understanding of AWS VPCs, subnets, and security groups.
+- **AWS CLI**: Installed and configured AWS Command Line Interface for advanced setups.
+- **Databricks Account**: Access to Databricks or plans to create a new workspace.
 
-You need to handle such invalid dates more gracefully, perhaps by filtering them out or correcting them if possible.
+## AWS Databricks Resources Overview
 
-Step-by-Step Fix:
+When deploying Databricks on AWS, several AWS resources are utilized:
 
-	1.	Filter out invalid dates: Let’s add a check in the query to only process valid dates. Dates beyond a reasonable limit (e.g., 2099-12-31) can be filtered out or handled as an error condition.
-	2.	Correct the specific invalid date: If the issue is due to data entry mistakes, you can either correct it in the source data or handle it explicitly in the query.
+- **Amazon EC2 Instances**: Compute resources for running Databricks clusters.
+- **Amazon S3 Buckets**: Storage for data files and logs.
+- **IAM Roles and Policies**: Access control and permissions management.
+- **Amazon VPC**: Virtual network for resource isolation.
+- **Security Groups**: Firewall rules to control inbound and outbound traffic.
+- **Elastic IPs**: Optional static IP addresses for consistent access.
+
+## Deployment Guide on Databricks
+
+### Step 1: Set Up AWS Environment
+
+- **Create a VPC**: Set up a Virtual Private Cloud if not already existing.
+- **Configure Subnets**: Define public and private subnets across availability zones.
+- **Set Up Security Groups**: Establish inbound and outbound rules for network traffic.
+- **Create IAM Roles**: Define roles with the necessary permissions for EC2 and S3 access.
+
+### Step 2: Subscribe to Databricks in AWS Marketplace
+
+- Navigate to the [AWS Marketplace](https://aws.amazon.com/marketplace) and search for Databricks.
+- **Subscribe**: Accept the terms and conditions to subscribe to the Databricks offering.
+
+### Step 3: Deploy Databricks Workspace
+
+- **Choose Deployment Method**:
+  - **Quick Start**: Use the Databricks AWS Quick Start for a simplified setup.
+  - **AWS CloudFormation**: Utilize templates for customizable deployments.
+- **Specify Parameters**: Input required details such as VPC ID, subnet IDs, and IAM roles.
+- **Launch Stack**: Initiate the deployment and wait for the resources to be provisioned.
+
+### Step 4: Access Databricks Workspace
+
+- **Retrieve URL**: After deployment, obtain the workspace URL from the CloudFormation outputs.
+- **Login**: Access the Databricks workspace and complete any initial setup steps.
+- **Configure Workspace**: Set up users, groups, and cluster policies as needed.
+
+## Databricks Task Required Parameters
+
+When creating tasks or jobs in Databricks, certain parameters are required:
+
+- **Job Name**: A unique identifier for the job.
+- **Cluster Specification**:
+  - **Existing Cluster**: Use a pre-configured cluster.
+  - **New Cluster**: Define cluster settings such as instance types and sizes.
+- **Notebook or Script**:
+  - **Notebook Path**: Specify the path to the Databricks notebook.
+  - **Script Location**: Provide the location of the Python/Scala script.
+- **Parameters**: Input parameters required by the notebook or script.
+- **Schedule**: (Optional) Define a schedule for automated runs.
+- **Libraries**: Attach necessary libraries or packages.
+- **Alerts**: Configure success or failure notifications.
+
+## How to Deploy Databricks Integration Using Service Catalog
+
+AWS Service Catalog enables organizations to create and manage catalogs of IT services approved for use on AWS.
+
+### Step 1: Create a Portfolio
+
+- **Access Service Catalog**: Navigate to the AWS Service Catalog console.
+- **Create Portfolio**: Define a new portfolio for Databricks deployments.
+- **Set Permissions**: Assign IAM users, roles, or groups who can access the portfolio.
+
+### Step 2: Add Databricks Product
+
+- **Define Product**: Create a new product within the portfolio.
+- **Upload Template**: Use a CloudFormation template provided by Databricks.
+- **Configure Details**: Add product name, description, and owner information.
+
+### Step 3: Configure Constraints and Parameters
+
+- **Set Launch Constraints**: Define IAM roles for product provisioning.
+- **Parameter Configuration**: Predefine parameter values and constraints for consistent deployments.
+
+### Step 4: Share Portfolio
+
+- **Share with Accounts**: If using multiple AWS accounts, share the portfolio accordingly.
+- **Accept Portfolio**: In recipient accounts, accept the shared portfolio to make products available.
+
+### Step 5: Provision the Product
+
+- **Access Catalog**: Users navigate to the Service Catalog to view available products.
+- **Launch Product**: Select the Databricks product and provide necessary parameters.
+- **Review and Deploy**: Confirm settings and launch the deployment.
+
+### Step 6: Manage Deployed Resources
+
+- **Monitor Deployment**: Use CloudFormation stacks to track resource creation.
+- **Access Workspace**: Once deployed, access the Databricks workspace using the provided URL.
+- **Operational Management**: Manage clusters, jobs, and other resources within Databricks.
+
+---
+
+## Conclusion
+
+Deploying Databricks on AWS provides a scalable and collaborative environment for data analytics and machine learning. By following the prerequisites and deployment steps outlined above, organizations can efficiently set up and manage Databricks workspaces tailored to their needs. Leveraging AWS Service Catalog further streamlines the deployment process, ensuring compliance and ease of management across the organization.
+
+---
+
+**References**:
+
+- [Databricks Documentation](https://docs.databricks.com/)
+- [AWS Service Catalog Documentation](https://docs.aws.amazon.com/servicecatalog/latest/adminguide/introduction.html)
+- [AWS CloudFormation Templates for Databricks](https://github.com/databricks/databricks-aws-resources)
