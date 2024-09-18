@@ -29,237 +29,431 @@ When deploying Databricks on AWS, several AWS resources are utilized:
 
 ### Step 1: Set Up AWS Environment
 
-- **Create a VPC**: Set up a Virtual Private Cloud if not already existing.
-- **Configure Subnets**: Define public and private subnets across availability zones.
-- **Set Up Security Groups**: Establish inbound and outbound rules for network traffic.
-- **Create IAM Roles**: Define roles with the necessary permissions for EC2 and S3 access.
+#### Create a VPC
+
+- **Action**: Go to the AWS Management Console and navigate to the VPC service.
+- **Screenshot**:
+
+  ![AWS VPC Dashboard](image_placeholder.png)
+
+  *Figure: AWS VPC Dashboard where you can create a new VPC.*
+
+- **Instructions**:
+  - Click on **"Create VPC"**.
+  - Provide a **Name tag**, IPv4 CIDR block, and any other necessary details.
+
+#### Configure Subnets
+
+- **Action**: Within your VPC, create public and private subnets.
+- **Screenshot**:
+
+  ![Subnets Configuration](image_placeholder.png)
+
+  *Figure: Creating subnets within the VPC.*
+
+- **Instructions**:
+  - Navigate to **"Subnets"** under the VPC dashboard.
+  - Click **"Create subnet"** and specify the VPC, subnet settings, and availability zones.
+
+#### Set Up Security Groups
+
+- **Action**: Define inbound and outbound rules for your Databricks clusters.
+- **Screenshot**:
+
+  ![Security Groups](image_placeholder.png)
+
+  *Figure: Configuring security groups for Databricks clusters.*
+
+- **Instructions**:
+  - Go to **"Security Groups"** in the EC2 Dashboard.
+  - Click **"Create security group"** and set up the necessary rules.
+
+#### Create IAM Roles
+
+- **Action**: Create IAM roles with the necessary permissions for Databricks.
+- **Screenshot**:
+
+  ![IAM Role Creation](image_placeholder.png)
+
+  *Figure: Creating an IAM role for EC2 with S3 access.*
+
+- **Instructions**:
+  - Navigate to **"IAM"** in the AWS console.
+  - Select **"Roles"** and click **"Create role"**.
+  - Choose **"EC2"** as the trusted entity and attach required policies like **"AmazonS3FullAccess"**.
 
 ### Step 2: Subscribe to Databricks in AWS Marketplace
 
-- Navigate to the [AWS Marketplace](https://aws.amazon.com/marketplace) and search for Databricks.
-- **Subscribe**: Accept the terms and conditions to subscribe to the Databricks offering.
+- **Action**: Access the AWS Marketplace and locate Databricks.
+- **Screenshot**:
+
+  ![AWS Marketplace Databricks Subscription](image_placeholder.png)
+
+  *Figure: Subscribing to Databricks in the AWS Marketplace.*
+
+- **Instructions**:
+  - Search for **"Databricks"** in the AWS Marketplace.
+  - Click on the Databricks offering and select **"Continue to Subscribe"**.
+  - Accept the terms and conditions.
 
 ### Step 3: Deploy Databricks Workspace
 
-- **Choose Deployment Method**:
-  - **Quick Start**: Use the Databricks AWS Quick Start for a simplified setup.
-  - **AWS CloudFormation**: Utilize templates for customizable deployments.
-- **Specify Parameters**: Input required details such as VPC ID, subnet IDs, and IAM roles.
-- **Launch Stack**: Initiate the deployment and wait for the resources to be provisioned.
+#### Choose Deployment Method
+
+- **Option 1: Quick Start**
+
+  - **Action**: Use the Databricks AWS Quick Start.
+  - **Screenshot**:
+
+    ![Databricks Quick Start](image_placeholder.png)
+
+    *Figure: Selecting Databricks Quick Start deployment.*
+
+- **Option 2: AWS CloudFormation**
+
+  - **Action**: Use AWS CloudFormation templates for custom deployment.
+  - **Screenshot**:
+
+    ![CloudFormation Template](image_placeholder.png)
+
+    *Figure: Deploying Databricks using a CloudFormation template.*
+
+#### Specify Parameters
+
+- **Action**: Provide necessary details in the deployment template.
+- **Screenshot**:
+
+  ![CloudFormation Parameters](image_placeholder.png)
+
+  *Figure: Specifying parameters like VPC ID, Subnet IDs, and IAM roles.*
+
+- **Instructions**:
+  - Enter your **VPC ID**, **Subnet IDs**, **IAM role ARN**, and other required parameters.
+
+#### Launch Stack
+
+- **Action**: Initiate the deployment.
+- **Screenshot**:
+
+  ![CloudFormation Stack Launch](image_placeholder.png)
+
+  *Figure: Reviewing and launching the CloudFormation stack.*
+
+- **Instructions**:
+  - Review your configurations.
+  - Click **"Create stack"** and monitor the progress.
 
 ### Step 4: Access Databricks Workspace
 
-- **Retrieve URL**: After deployment, obtain the workspace URL from the CloudFormation outputs.
-- **Login**: Access the Databricks workspace and complete any initial setup steps.
-- **Configure Workspace**: Set up users, groups, and cluster policies as needed.
+- **Retrieve URL**:
+
+  - **Action**: Obtain the workspace URL from CloudFormation outputs.
+  - **Screenshot**:
+
+    ![CloudFormation Outputs](image_placeholder.png)
+
+    *Figure: Finding the Databricks workspace URL in CloudFormation outputs.*
+
+- **Login**:
+
+  - **Action**: Access the workspace and perform initial setup.
+  - **Screenshot**:
+
+    ![Databricks Workspace Login](image_placeholder.png)
+
+    *Figure: Databricks login page.*
+
+- **Configure Workspace**:
+
+  - **Action**: Set up users, groups, and policies.
+  - **Screenshot**:
+
+    ![Databricks Workspace Dashboard](image_placeholder.png)
+
+    *Figure: The Databricks workspace dashboard.*
 
 ## Accessing Databricks Endpoints in AWS
 
-Accessing Databricks endpoints in AWS involves connecting securely to the Databricks workspace, APIs, and clusters.
+Accessing Databricks endpoints involves connecting securely to your workspace, APIs, and clusters.
 
 ### Databricks Workspace URL
 
-- **Workspace URL**: The primary access point for your Databricks environment.
-  - Typically in the format: `https://<databricks-instance>.cloud.databricks.com`
-- **Retrieve URL**: From the AWS CloudFormation outputs or the Databricks console.
+- **Format**: `https://<databricks-instance>.cloud.databricks.com`
+- **Screenshot**:
+
+  ![Databricks Workspace URL](image_placeholder.png)
+
+  *Figure: The URL format for accessing your Databricks workspace.*
 
 ### Databricks REST APIs
 
-- **API Access**: Databricks provides RESTful APIs for programmatic interaction.
-- **API Endpoint**: Same as the workspace URL, e.g., `https://<databricks-instance>.cloud.databricks.com/api/2.0/`
+- **Endpoint**: `https://<databricks-instance>.cloud.databricks.com/api/2.0/`
 - **Authentication**:
-  - **Personal Access Tokens**: Generate tokens within the Databricks workspace under User Settings.
-  - **AWS Credentials**: Use AWS IAM roles and tokens for authentication.
+
+  - Generate a **Personal Access Token**.
+  - **Screenshot**:
+
+    ![Generating Personal Access Token](image_placeholder.png)
+
+    *Figure: Generating a personal access token in Databricks.*
+
 - **Use Cases**:
-  - Automate cluster management.
-  - Trigger jobs and workflows.
-  - Manage workspace configurations.
+
+  - Automate tasks like cluster management and job submissions.
+  - **Screenshot**:
+
+    ![Databricks API Documentation](image_placeholder.png)
+
+    *Figure: Databricks REST API documentation for reference.*
 
 ### VPC Endpoints (PrivateLink)
 
-- **AWS PrivateLink**: Enables private connectivity between your VPC and Databricks without exposing traffic to the public internet.
-- **Benefits**:
-  - Enhanced security by keeping traffic within the AWS network.
-  - Reduced exposure to public internet risks.
 - **Setup**:
-  - **Create VPC Endpoint**: In your AWS VPC, create an interface VPC endpoint for Databricks services.
-  - **Configure DNS**: Update DNS settings to point to the VPC endpoint.
-  - **Security Groups**: Ensure security groups allow necessary inbound and outbound traffic.
-- **Databricks Support**: Contact Databricks support for assistance in setting up PrivateLink.
+
+  - **Action**: Create an interface VPC endpoint for Databricks services.
+  - **Screenshot**:
+
+    ![Creating VPC Endpoint](image_placeholder.png)
+
+    *Figure: Setting up a VPC endpoint for Databricks via AWS PrivateLink.*
+
+- **Benefits**:
+
+  - Enhanced security by keeping traffic within AWS.
 
 ### Cluster Endpoints
 
-- **SSH Access**: Direct SSH access to clusters is not available due to the managed nature of Databricks.
-- **Driver and Worker Logs**: Access logs via the Databricks UI or API.
-- **Spark UI**: Available through the Databricks workspace for monitoring jobs and performance.
+- **Accessing Logs and Spark UI**:
+
+  - **Screenshot**:
+
+    ![Databricks Cluster Details](image_placeholder.png)
+
+    *Figure: Accessing cluster details and Spark UI in Databricks.*
+
+- **Instructions**:
+
+  - Navigate to the **"Clusters"** tab in your workspace.
+  - Select your cluster to view details, logs, and monitoring tools.
 
 ### AWS Console Integration
 
-- **CloudWatch Logs**: Configure Databricks to send logs to AWS CloudWatch for centralized monitoring.
-- **S3 Access**: Interact with Amazon S3 buckets for data storage.
-  - **Mount S3 Buckets**: Use DBFS (Databricks File System) to mount S3 buckets.
-- **IAM Roles**:
-  - **Instance Profiles**: Attach IAM roles to clusters for AWS resource access without embedding keys.
-  - **Fine-Grained Access Control**: Use IAM policies to control access to specific AWS resources.
+- **S3 Access**:
+
+  - **Action**: Mount S3 buckets using DBFS.
+  - **Screenshot**:
+
+    ![Mounting S3 Bucket](image_placeholder.png)
+
+    *Figure: Code snippet to mount an S3 bucket in Databricks.*
+
+- **CloudWatch Logs**:
+
+  - **Action**: Configure Databricks to send logs to CloudWatch.
+  - **Screenshot**:
+
+    ![Configuring CloudWatch Logs](image_placeholder.png)
+
+    *Figure: Setting up log delivery to CloudWatch from Databricks.*
 
 ## Databricks Task Required Parameters
 
 When creating tasks or jobs in Databricks, certain parameters are required:
 
-- **Job Name**: A unique identifier for the job.
+- **Job Name**: A unique identifier.
 - **Cluster Specification**:
-  - **Existing Cluster**: Use a pre-configured cluster.
-  - **New Cluster**: Define cluster settings such as instance types and sizes.
+
+  - **Screenshot**:
+
+    ![Configuring Cluster for Job](image_placeholder.png)
+
+    *Figure: Selecting a cluster or configuring a new one for your job.*
+
 - **Notebook or Script**:
-  - **Notebook Path**: Specify the path to the Databricks notebook.
-  - **Script Location**: Provide the location of the Python/Scala script.
-- **Parameters**: Input parameters required by the notebook or script.
-- **Schedule**: (Optional) Define a schedule for automated runs.
-- **Libraries**: Attach necessary libraries or packages.
-- **Alerts**: Configure success or failure notifications.
+
+  - **Screenshot**:
+
+    ![Selecting Notebook for Job](image_placeholder.png)
+
+    *Figure: Choosing the notebook or script to run as a job.*
+
+- **Parameters**: Input parameters for the task.
+- **Schedule**: Set up automated runs.
+- **Libraries**: Attach required libraries.
+- **Alerts**: Configure notifications.
 
 ## Launching Databricks Tasks in AWS
 
-Launching tasks in Databricks involves running jobs that execute notebooks or scripts. You can automate and schedule these tasks using various methods.
+### Using the Databricks UI
 
-### Methods to Launch Tasks
+- **Navigate to Jobs**:
 
-#### Using the Databricks UI
+  - **Screenshot**:
 
-1. **Navigate to Jobs**: In the Databricks workspace, click on the "Jobs" tab.
-2. **Create Job**: Click on "Create Job" and fill in the required details.
-   - **Task Name**: Provide a name for the task.
-   - **Type**: Choose between Notebook, JAR, Python script, etc.
-   - **Parameters**: Input any required parameters.
-3. **Configure Cluster**: Select an existing cluster or configure a new one.
-4. **Schedule**: Set up a schedule if needed.
-5. **Submit**: Save and run the job.
+    ![Databricks Jobs Tab](image_placeholder.png)
 
-#### Using the Databricks CLI
+    *Figure: Accessing the "Jobs" tab in Databricks workspace.*
 
-1. **Install CLI**: Ensure the Databricks CLI is installed and configured.
-   - Install via `pip install databricks-cli`.
-2. **Authenticate**: Use a personal access token to authenticate.
-   - Run `databricks configure --token`.
-3. **Create Job**: Use the `databricks jobs create` command with a JSON configuration file.
-   - Example: `databricks jobs create --json-file job_config.json`.
-4. **Run Job**: Use `databricks jobs run-now` to execute the job.
-   - Example: `databricks jobs run-now --job-id <job-id>`.
+- **Create Job**:
 
-#### Using the Databricks REST API
+  - **Screenshot**:
 
-1. **Endpoint**: Use the `/api/2.0/jobs/` endpoints.
-2. **Authentication**: Authenticate using personal access tokens.
-3. **Create Job**:
-   - Send a POST request to `/api/2.0/jobs/create` with the job configuration in JSON format.
-4. **Run Job**:
-   - POST to `/api/2.0/jobs/run-now` with the job ID.
-5. **Example**:
-   ```bash
-   curl -X POST https://<databricks-instance>.cloud.databricks.com/api/2.0/jobs/create \
-     -H "Authorization: Bearer <your-token>" \
-     -d '{
-       "name": "Example Job",
-       "new_cluster": { ... },
-       "notebook_task": {
-         "notebook_path": "/Users/your.email@example.com/ExampleNotebook"
-       }
-     }'
-   ```
+    ![Creating a New Job](image_placeholder.png)
 
-#### Integrating with AWS Services
+    *Figure: Filling out job details in the Databricks UI.*
+
+- **Configure Cluster and Schedule**:
+
+  - **Screenshot**:
+
+    ![Job Configuration](image_placeholder.png)
+
+    *Figure: Configuring cluster settings and scheduling for the job.*
+
+### Using the Databricks CLI
+
+- **Install and Configure CLI**:
+
+  - **Screenshot**:
+
+    ![Databricks CLI Configuration](image_placeholder.png)
+
+    *Figure: Setting up the Databricks CLI with authentication.*
+
+- **Create and Run Job**:
+
+  - **Screenshot**:
+
+    ![CLI Job Submission](image_placeholder.png)
+
+    *Figure: Submitting a job via the Databricks CLI.*
+
+### Using the Databricks REST API
+
+- **Create Job**:
+
+  - **Screenshot**:
+
+    ![REST API Job Creation](image_placeholder.png)
+
+    *Figure: Using a tool like Postman to create a job via REST API.*
+
+- **Run Job**:
+
+  - **Screenshot**:
+
+    ![REST API Job Execution](image_placeholder.png)
+
+    *Figure: Executing a job run through the REST API.*
+
+### Integrating with AWS Services
 
 - **AWS Lambda**:
-  - **Trigger Jobs**: Use Lambda functions to call Databricks APIs and trigger jobs based on events.
-  - **Use Cases**: Event-driven data processing, real-time analytics.
+
+  - **Screenshot**:
+
+    ![Lambda Function Configuration](image_placeholder.png)
+
+    *Figure: Setting up an AWS Lambda function to trigger Databricks jobs.*
+
 - **AWS Step Functions**:
-  - **Orchestrate Workflows**: Incorporate Databricks jobs into larger workflows with other AWS services.
-  - **Integration**: Use the Step Functions Data Science SDK to create and manage machine learning pipelines.
-- **EventBridge (formerly CloudWatch Events)**:
-  - **Scheduled Triggers**: Set up rules to trigger Lambda functions or directly invoke Databricks APIs on a schedule.
 
-### AWS-Specific Configurations
+  - **Screenshot**:
 
-- **IAM Roles and Instance Profiles**:
-  - **Instance Profiles**: Attach an IAM role to your Databricks cluster to grant permissions to AWS resources like S3, DynamoDB, etc.
-  - **Configuration**:
-    - Create an IAM role with necessary policies.
-    - Attach the role to the cluster via the Databricks workspace UI or API.
-- **Network Security**:
-  - **Security Groups**: Ensure security groups allow communication between Databricks clusters and AWS services.
-  - **VPC Peering**: If accessing resources in another VPC, set up VPC peering.
-- **Encryption**:
-  - **Data at Rest**: Use AWS KMS keys to encrypt data stored in S3.
-  - **Data in Transit**: Databricks encrypts data in transit using TLS.
-- **Credential Passthrough**:
-  - **ADFS/SAML Integration**: Integrate with AWS Single Sign-On for seamless authentication.
+    ![Step Functions Workflow](image_placeholder.png)
+
+    *Figure: Incorporating Databricks tasks into AWS Step Functions workflows.*
 
 ## How to Deploy Databricks Integration Using Service Catalog
 
-AWS Service Catalog enables organizations to create and manage catalogs of IT services approved for use on AWS.
-
 ### Step 1: Create a Portfolio
 
-- **Access Service Catalog**: Navigate to the AWS Service Catalog console.
-- **Create Portfolio**: Define a new portfolio for Databricks deployments.
-  - **Name**: Provide a meaningful name.
-  - **Description**: Describe the portfolio's purpose.
-  - **Owner**: Specify the owner or administrator.
-- **Set Permissions**: Assign IAM users, roles, or groups who can access the portfolio.
+- **Action**: Navigate to AWS Service Catalog.
+- **Screenshot**:
+
+  ![Service Catalog Portfolio Creation](image_placeholder.png)
+
+  *Figure: Creating a new portfolio in AWS Service Catalog.*
 
 ### Step 2: Add Databricks Product
 
-- **Define Product**: Create a new product within the portfolio.
 - **Upload Template**:
-  - Use a CloudFormation template provided by Databricks or create a custom one.
-  - Templates define the AWS resources needed for Databricks deployments.
-- **Configure Details**:
-  - **Product Name**: Name the product (e.g., "Databricks Workspace").
-  - **Description**: Provide details about the product.
-  - **Distributor**: Optionally, specify the product distributor.
+
+  - **Screenshot**:
+
+    ![Uploading CloudFormation Template](image_placeholder.png)
+
+    *Figure: Uploading the Databricks CloudFormation template as a product.*
 
 ### Step 3: Configure Constraints and Parameters
 
 - **Set Launch Constraints**:
-  - **Role-Based Access**: Define IAM roles that users assume when launching the product.
-  - **Resource Limits**: Control the size and scope of resources users can provision.
+
+  - **Screenshot**:
+
+    ![Configuring Launch Constraints](image_placeholder.png)
+
+    *Figure: Setting IAM roles for product provisioning.*
+
 - **Parameter Configuration**:
-  - **Default Values**: Set default values for CloudFormation parameters.
-  - **Restrictions**: Enforce allowed values or patterns to ensure compliance.
+
+  - **Screenshot**:
+
+    ![Defining Parameters](image_placeholder.png)
+
+    *Figure: Predefining parameter values and constraints.*
 
 ### Step 4: Share Portfolio
 
 - **Share with Accounts**:
-  - If operating in a multi-account environment, share the portfolio with other AWS accounts or organizations.
-- **Accept Portfolio**:
-  - In recipient accounts, accept the shared portfolio to make products available for deployment.
+
+  - **Screenshot**:
+
+    ![Sharing Portfolio](image_placeholder.png)
+
+    *Figure: Sharing the portfolio with other AWS accounts.*
 
 ### Step 5: Provision the Product
 
 - **Access Catalog**:
-  - Users navigate to the Service Catalog in the AWS console to view available products.
+
+  - **Screenshot**:
+
+    ![Service Catalog Products](image_placeholder.png)
+
+    *Figure: Users accessing the Databricks product in the Service Catalog.*
+
 - **Launch Product**:
-  - Select the Databricks product and provide necessary parameters during provisioning.
-- **Review and Deploy**:
-  - Confirm settings, review costs, and launch the deployment.
-  - **Provisioned Product**: The deployed instance of the product, managed via Service Catalog.
+
+  - **Screenshot**:
+
+    ![Provisioning Product](image_placeholder.png)
+
+    *Figure: Launching the Databricks product and providing parameters.*
 
 ### Step 6: Manage Deployed Resources
 
 - **Monitor Deployment**:
-  - Use the AWS CloudFormation console to monitor stack creation and resource provisioning.
+
+  - **Screenshot**:
+
+    ![Monitoring CloudFormation Stack](image_placeholder.png)
+
+    *Figure: Tracking resource creation in CloudFormation.*
+
 - **Access Workspace**:
-  - Once deployed, access the Databricks workspace using the provided URL.
-- **Operational Management**:
-  - Manage clusters, jobs, libraries, and other resources within Databricks.
-- **Updates and Deletion**:
-  - Use Service Catalog to update or delete provisioned products, ensuring resources are managed consistently.
+
+  - **Screenshot**:
+
+    ![Accessing Deployed Databricks Workspace](image_placeholder.png)
+
+    *Figure: Accessing the Databricks workspace post-deployment.*
 
 ---
 
 ## Conclusion
 
-Deploying Databricks on AWS provides a scalable and collaborative environment for data analytics and machine learning. By following the prerequisites and deployment steps outlined above, organizations can efficiently set up and manage Databricks workspaces tailored to their needs. Accessing Databricks endpoints securely and integrating with AWS services enables seamless operations. Leveraging AWS Service Catalog further streamlines the deployment process, ensuring compliance and ease of management across the organization.
+Deploying Databricks on AWS provides a scalable and collaborative environment for data analytics and machine learning. By following the prerequisites and deployment steps outlined above, and utilizing the added visual guides, organizations can efficiently set up and manage Databricks workspaces tailored to their needs. Accessing Databricks endpoints securely and integrating with AWS services enables seamless operations. Leveraging AWS Service Catalog further streamlines the deployment process, ensuring compliance and ease of management across the organization.
 
 ---
 
@@ -276,4 +470,8 @@ Deploying Databricks on AWS provides a scalable and collaborative environment fo
 
 ---
 
-Feel free to reach out if you have any more questions or need further clarification on any of the steps!
+*Note: The screenshots referenced are placeholders indicating where visuals would be helpful in the deployment process.*
+
+---
+
+Is there anything else I can assist you with?
