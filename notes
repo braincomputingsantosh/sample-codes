@@ -1,24 +1,4 @@
-WITH current_holidays AS (
-    SELECT date_value, holiday_name
-    FROM sv3_res.date_dimension
-    WHERE is_holiday = TRUE
-),
-exception_days AS (
-    -- You'll need to create this table or CTE with the exceptional days
-    -- For example:
-    VALUES 
-        ('2021-01-20'::date, 'Inauguration Day'),
-        ('2021-04-15'::date, 'CFPB Chicago Conference'),
-        -- Add more exceptional days as needed
-),
-total_holiday_table AS (
-    SELECT date_value, holiday_name
-    FROM current_holidays
-    
-    UNION
-    
-    SELECT * FROM exception_days
-)
-SELECT *
-FROM total_holiday_table
-ORDER BY date_value;
+current_holidays CTE: Selects all regular holidays from the sv3_res.date_dimension table.
+exception_days CTE: This is where you'll add the exceptional days. I've provided an example structure, but you'll need to populate this with your specific exceptional days.
+total_holiday_table CTE: Combines the regular holidays and exceptional days using a UNION operation.
+The final SELECT statement retrieves all rows from the total_holiday_table, giving you a complete list of all days that should not be counted as business days.
