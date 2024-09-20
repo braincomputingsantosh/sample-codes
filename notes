@@ -1,64 +1,21 @@
-Based on the message, the problem relates to potential HMDA (Home Mortgage Disclosure Act) and Regulation C violations at Bell Bank. The key points are:
+Based on the analysis of the messages, here are the recommended actions:
 
-The FDIC (Federal Deposit Insurance Corporation) has sent a referral letter regarding potential HMDA and Regulation C violations at Bell Bank.
-In the past year or two, the FDIC has made a couple of referrals identifying HMDA deficiencies, including examples at Synovus and Truist in the SE region.
-The FDIC typically recommends that in such cases, the bank should review its HMDA LAR (Loan Application Register) for the relevant years to check for errors and resubmit if necessary.
-In this case, it appears the bank has already submitted the omitted applications, so the main action required is to have the entity confirm this.
-The message suggests that this is a recurring issue, as there have been multiple referrals from the FDIC regarding HMDA deficiencies.
+1. Create a Triage memo that outlines the plan to validate Bell Bank's corrective actions through ongoing monitoring.
 
-The core problem is ensuring compliance with HMDA regulations and addressing any deficiencies or omissions in the bank's reporting of mortgage data. The situation requires follow-up to confirm that all necessary corrective actions have been taken.
+2. Confirm the exact resubmission status for HMDA LARs for 2021, 2022, and 2023. Pay special attention to the 4/27/2024 submission, which may cover multiple years.
 
+3. Request proof of resubmission directly from Bell Bank for all affected years, as this was the standard practice in previous monitoring.
 
-This message provides an update on the situation and asks for guidance. Here's a breakdown:
+4. Follow up with Muralidhar Malyala for any additional information they might provide about the resubmissions.
 
-They received a draft letter from the FDIC noting that Bell Bank had corrected the errors.
-They haven't yet reached out to Bell Bank but are planning to verify the HMDA corrections during their monitoring.
-The sender is asking for confirmation on whether Bell Bank resubmitted the HMDA LAR (Loan Application Register).
-They're seeking advice on the next steps, specifically asking whether they should:
-a) Validate the corrective action through their ongoing monitoring, or
-b) Complete a separate memo.
+5. Document the limitations of the current HMDA Tool in tracking resubmissions, especially for recent years (2022 and 2023).
 
-The main question here is about the appropriate follow-up action to ensure that Bell Bank's HMDA corrections have been properly implemented and documented. The sender is looking for guidance on whether to incorporate this verification into their regular monitoring process or to create a separate, dedicated document to address this specific issue.
+6. Propose improvements to the HMDA Tool to better track and display resubmission information for multiple years.
 
+7. Ensure that the monitoring process includes a thorough review of all submissions and resubmissions, rather than simply accepting entity-provided proof without verification.
 
-This message provides further clarification and a proposed action plan regarding the FDIC referrals for Bell Bank's HMDA issues. Here's a breakdown:
+8. Coordinate with Craig Cameron to verify the resubmission details he has access to and incorporate this information into the final assessment.
 
-1. The sender (likely a supervisor or team lead) is addressing Elda, suggesting a consistent approach to handling FDIC referrals.
+9. Prepare a comprehensive report detailing the findings, including any discrepancies or uncertainties in the submission dates and content.
 
-2. They propose creating a Triage memo that recommends validating the bank's corrective action through monitoring.
-
-3. The sender acknowledges that they can confirm whether the entity has resubmitted, but they don't have direct access to that information.
-
-4. They're adding Craig Cameron from their team to the conversation, as Craig may be able to confirm whether Bell Bank has resubmitted its HMDA LARs (Loan Application Registers) for the years 2021, 2022, and 2023.
-
-5. The sender directly asks Craig to confirm if Bell Bank has resubmitted its HMDA LARs for those specific years.
-
-This message shows an attempt to:
-1. Standardize the process for handling FDIC referrals
-2. Verify the corrective actions taken by Bell Bank
-3. Involve the right team members who have access to the necessary information
-4. Ensure that the HMDA LAR resubmissions cover all relevant years (2021-2023)
-
-The main action items are creating a Triage memo and confirming the resubmission of HMDA LARs for the specified years.
-
-
-This message provides detailed information about Bell Bank's HMDA submissions and some context about the monitoring process. Here's a breakdown:
-
-1. Submission dates:
-   - 2023 submission: logged on 2/27/2024 (one submission)
-   - 2022 submission: logged on 3/10/2023 (one submission)
-   - 2021 submission: logged on 3/2/2022 and 4/27/2024 (two submissions)
-
-2. The sender notes that the resubmission on 4/27/2024 could be for all three years (2021-2023), but the HMDA Tool is limited in providing more detail.
-
-3. For years before 2021, the sender can see different submission dates in a drop-down menu, but 2022 and 2023 don't have other dates available.
-
-4. There's uncertainty about whether the 4/27/2024 resubmission covers all the years in question.
-
-5. The sender mentions waiting for more information from Muralidhar Malyala but doesn't expect additional details.
-
-6. They're noting these observations for potential changes to the HMDA Tool.
-
-7. Side Note: In previous monitoring, they always received proof of resubmission from the entity and accepted it without doubt.
-
-This message highlights some challenges with the current HMDA Tool's limitations in providing clear information about resubmissions, especially for recent years. It also indicates a potential change in the monitoring process, as they're now investigating the submissions more closely rather than simply accepting proof from the entity.
+10. Develop a standardized process for handling similar FDIC referrals in the future, incorporating lessons learned from this case.
