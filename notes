@@ -1,21 +1,22 @@
-Based on the analysis of the messages, here are the recommended actions:
-
-1. Create a Triage memo that outlines the plan to validate Bell Bank's corrective actions through ongoing monitoring.
-
-2. Confirm the exact resubmission status for HMDA LARs for 2021, 2022, and 2023. Pay special attention to the 4/27/2024 submission, which may cover multiple years.
-
-3. Request proof of resubmission directly from Bell Bank for all affected years, as this was the standard practice in previous monitoring.
-
-4. Follow up with Muralidhar Malyala for any additional information they might provide about the resubmissions.
-
-5. Document the limitations of the current HMDA Tool in tracking resubmissions, especially for recent years (2022 and 2023).
-
-6. Propose improvements to the HMDA Tool to better track and display resubmission information for multiple years.
-
-7. Ensure that the monitoring process includes a thorough review of all submissions and resubmissions, rather than simply accepting entity-provided proof without verification.
-
-8. Coordinate with Craig Cameron to verify the resubmission details he has access to and incorporate this information into the final assessment.
-
-9. Prepare a comprehensive report detailing the findings, including any discrepancies or uncertainties in the submission dates and content.
-
-10. Develop a standardized process for handling similar FDIC referrals in the future, incorporating lessons learned from this case.
+| Feature | Databricks Temp Table | RDBMS Temp Table |
+|---------|----------------------|-------------------|
+| Scope | Session-scoped (temporary view) or application-scoped (global temporary view) | Session-scoped or transaction-scoped |
+| Storage | In-memory or disk-based, depending on size and configuration | Usually memory-based, can spill to disk |
+| Indexing | No built-in indexing | Supports creation of indexes |
+| Persistence | Dropped at end of session/application | Dropped at end of session/transaction |
+| Query Optimization | Uses Catalyst Optimizer, whole-stage code generation | Uses cost-based optimizer, index seeks |
+| Data Distribution | Can be distributed across cluster | Typically on a single node |
+| Partitioning | Supports partitioning for large datasets | May support partitioning (database-specific) |
+| Caching | Can be explicitly cached for faster access | May use buffer pool for caching |
+| Constraints | Does not support constraints (e.g., PRIMARY KEY, FOREIGN KEY) | Supports constraints |
+| Triggers | Does not support triggers | Often supports triggers |
+| Concurrency | Handled by Spark's concurrency model | Handled by RDBMS transaction management |
+| Size Limitations | Limited by cluster resources | Often limited by temp space allocation |
+| Creation Syntax | `CREATE TEMPORARY VIEW` or `CREATE GLOBAL TEMPORARY VIEW` | Usually `CREATE TEMPORARY TABLE` |
+| Language Support | SQL, Python, Scala, R | Primarily SQL |
+| Join Performance | Optimized for distributed joins | Optimized for local joins, may use indexes |
+| Update Operations | Immutable (changes create new version) | Mutable (in-place updates) |
+| Automated Optimization | Features like AQE (Adaptive Query Execution) | Statistics-based optimization |
+| Integration with Big Data | Native integration with big data ecosystems | Limited without additional tools |
+| Streaming Support | Can be used with structured streaming | Generally not applicable |
+| Scalability | Scales with cluster size | Limited to single node capacity |
