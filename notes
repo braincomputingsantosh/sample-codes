@@ -1,32 +1,11 @@
-Summary of Findings:
+Dear [Recipient],
+I hope this email finds you well. I'm reaching out to inquire about the current necessity of Service Catalog Products for our Databricks implementation.
+Given the evolving nature of our infrastructure, I wanted to confirm if these products are still required for our setup. We are actively working on configuring Databricks, but I wanted to touch base on this specific aspect.
+It's worth noting that we're in the process of setting up numerous services within Databricks, which is quite an extensive undertaking. In light of this, I'm seeking clarification on whether the Service Catalog Products should remain a priority in our configuration process.
+Could you please provide some insight into:
 
-We received an FDIC referral letter noting potential HMDA and Regulation C violations at Bell Bank.
-Bell Bank has reportedly corrected the errors, but we need to verify this.
-We've identified submission dates for HMDA LARs:
+The current relevance of Service Catalog Products for our Databricks environment
+Any potential impact on our ongoing configuration efforts if we were to deprioritize these products
 
-2023: submitted on 2/27/2024
-2022: submitted on 3/10/2023
-2021: submitted on 3/2/2022 and 4/27/2024
-
-
-There's uncertainty about whether the 4/27/2024 submission covers all years (2021-2023).
-Our HMDA Tool has limitations in providing detailed information about recent resubmissions.
-Our previous practice was to accept proof of resubmission from the entity without further verification.
-
-Key Action Items:
-
-Create a Triage memo for validating Bell Bank's corrective actions.
-Confirm exact resubmission status for 2021-2023 HMDA LARs.
-Request direct proof of resubmission from Bell Bank.
-Document HMDA Tool limitations and propose improvements.
-Develop a standardized process for handling FDIC referrals.
-
-Given the complexity of this issue and the need for coordinated action, I suggest we schedule a meeting to discuss our next steps. Please let me know your availability for next week, and I'll arrange a time that works for everyone.
-During this meeting, we can:
-
-Review our findings in detail
-Assign responsibilities for each action item
-Discuss potential improvements to our monitoring process
-Set deadlines for completion of each task
-
-Please come prepared with any additional insights or concerns you may have.
+Your guidance on this matter would be greatly appreciated as it will help us allocate our resources more effectively.
+Thank you for your time and assistance.
