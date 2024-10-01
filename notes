@@ -1,123 +1,14 @@
-# Create a global temporary view
-spark.sql("""
-CREATE GLOBAL TEMPORARY VIEW global_temp.MyGlobalTempTable AS
+-- Create a global temporary view
+CREATE GLOBAL TEMPORARY VIEW MyGlobalTempTable AS
 SELECT 1 as id, 'Example' as name
 UNION ALL
-SELECT 2 as id, 'Data' as name
-""")
+SELECT 2 as id, 'Data' as name;
 
-# Access the global temporary view
-spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
+-- Access the global temporary view
+SELECT * FROM global_temp.MyGlobalTempTable;
 
-# In a different session or notebook, you can access it like this:
-spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
+-- In a different session or notebook, you can access it like this:
+SELECT * FROM global_temp.MyGlobalTempTable;
 
-# When you're done, you can drop the view
-spark.sql("DROP VIEW global_temp.MyGlobalTempTable")
-
-
-
-Yes, there is a way to make a temporary table global in Databricks. This is done using a Global Temporary View. Let me explain this concept and how to implement it:
-
-1. Global Temporary Views:
-   - Created using the syntax `CREATE GLOBAL TEMPORARY VIEW`
-   - Visible to all sessions within the same Spark application
-   - Persist for the lifetime of the Spark application
-   - Stored in the `global_temp` database
-
-Here's how you can create and use a global temporary view:
-
-
-
-```python
-# Create a global temporary view
-spark.sql("""
-CREATE GLOBAL TEMPORARY VIEW global_temp.MyGlobalTempTable AS
-SELECT 1 as id, 'Example' as name
-UNION ALL
-SELECT 2 as id, 'Data' as name
-""")
-
-# Access the global temporary view
-spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
-
-# In a different session or notebook, you can access it like this:
-spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
-
-# When you're done, you can drop the view
-spark.sql("DROP VIEW global_temp.MyGlobalTempTable")
-
-```
-
-Key points about global temporary views:
-
-1. Scope: They are visible across all sessions within the same Spark application, making them more "global" than regular temporary views.
-
-2. Naming: Always prefixed with `global_temp.` when referring to them in queries.
-
-3. Lifetime: They persist for the duration of the Spark application, not just a single session.
-
-4. Use cases: Useful for sharing temporary data across multiple notebooks or jobs within the same Spark application.
-
-5. Limitations: 
-   - They don't persist across different Spark applications.
-   - They're not as durable as permanent tables.
-   - Modifications to the view in one session don't affect other sessions.
-
-6. Best practices:
-   - Use them judiciously to avoid cluttering the global namespace.
-   - Remember to drop them when they're no longer needed.
-   - Be aware that they consume cluster resources.
-
-It's important to note that while global temporary views provide a way to share temporary data more broadly than session-scoped temporary views, they are not equivalent to permanent tables. If you need truly persistent, shared data that survives across Spark application restarts, you should consider using permanent tables, possibly with Delta Lake for additional features and performance benefits.
-
-********************************************************************************************************************************
-
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit
-
-# Create a SparkSession (this is usually pre-created in Databricks notebooks)
-spark = SparkSession.builder.appName("CorrectGlobalTempViewDemo").getOrCreate()
-
-# Create a global temporary view - note the absence of 'global_temp.' in the creation statement
-spark.sql("""
-CREATE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
-SELECT 1 as id, 'University A' as name
-UNION ALL
-SELECT 2 as id, 'University B' as name
-""")
-
-def simulate_user_action(user_id):
-    print(f"\n--- User {user_id} Session ---")
-    
-    # Read from the global temporary view - note the use of 'global_temp.' here
-    print(f"User {user_id} reading the global temporary view:")
-    df = spark.sql("SELECT * FROM global_temp.SharedInstitutionsList")
-    df.show()
-    
-    # Attempt to modify the data (this creates a new DataFrame, not modifying the view)
-    print(f"User {user_id} attempting to add data:")
-    new_data = spark.createDataFrame([(3, f"University {user_id}")], ["id", "name"])
-    modified_df = df.union(new_data)
-    modified_df.show()
-    
-    # Attempt to "update" the global view (this creates/replaces a new global temp view)
-    print(f"User {user_id} attempting to 'update' the global view:")
-    modified_df.createOrReplaceGlobalTempView("SharedInstitutionsList")
-    
-    # Read again to show the view from this session's perspective
-    print(f"User {user_id} reading the global view again:")
-    spark.sql("SELECT * FROM global_temp.SharedInstitutionsList").show()
-
-# Simulate User 1's actions
-simulate_user_action("1")
-
-# Simulate User 2's actions
-simulate_user_action("2")
-
-# Show the final state of the global temporary view
-print("\n--- Final State of Global Temporary View ---")
-spark.sql("SELECT * FROM global_temp.SharedInstitutionsList").show()
-
-# Clean up
-spark.sql("DROP VIEW global_temp.SharedInstitutionsList")
+-- When you're done, you can drop the view
+DROP VIEW global_temp.MyGlobalTempTable;
