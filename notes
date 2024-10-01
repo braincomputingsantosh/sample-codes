@@ -1,25 +1,39 @@
-I'm writing to provide an update on our recent database enhancements regarding exceptional days:
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lit
 
-Helper Table Creation:
-We have successfully created a helper table called 'exceptional_days' to manage ad hoc dates.
-New Functions:
-Two new functions have been implemented:
-a) add_exceptional_day: Allows adding a new exceptional day
-Example: SELECT sv3_rpt.add_exceptional_day('2022-07-04', 'Special Conference Day');
-b) remove_exceptional_day: Enables removal of an exceptional day
-Example: SELECT sv3_rpt.remove_exceptional_day('2021-04-15');
-Supporting CTE Query:
-We've developed a Common Table Expression (CTE) query that combines:
+# Create a SparkSession (this is usually pre-created in Databricks notebooks)
+spark = SparkSession.builder.appName("MultiUserTempTableSimulation").getOrCreate()
 
-Newly added ad hoc dates from the exceptional_days table
-Additional dates from the original date dimension table
+# Create a global temporary view
+spark.sql("""
+CREATE GLOBAL TEMPORARY VIEW global_temp.Temp_InstitutionsList AS
+SELECT 1 as id, 'University A' as name
+UNION ALL
+SELECT 2 as id, 'University B' as name
+""")
 
-This query creates a comprehensive view of all relevant dates, including:
+# Function to simulate a user interacting with the global temp view
+def simulate_user(user_id):
+    print(f"User {user_id} accessing the global temporary view:")
+    
+    # Read from the global temporary view
+    df = spark.sql("SELECT * FROM global_temp.Temp_InstitutionsList")
+    df.show()
+    
+    # Simulate adding data (note: this doesn't actually modify the view for other users)
+    new_data = spark.createDataFrame([(3, f"University {user_id}")], ["id", "name"])
+    combined_df = df.union(new_data)
+    
+    print(f"User {user_id} after adding data (local to this session):")
+    combined_df.show()
 
-Regular holidays from sv3_ses.date_dimension
-Custom exceptional days from sv3_rpt.exceptional_days
+# Simulate multiple users
+simulate_user("A")
+simulate_user("B")
 
-The final result is ordered by date_value for easy reference.
+# Check the original global temporary view
+print("Original global temporary view remains unchanged:")
+spark.sql("SELECT * FROM global_temp.Temp_InstitutionsList").show()
 
-These enhancements provide greater flexibility in managing exceptional days while maintaining integration with our existing date-related data.
-If you need any further clarification or have questions about using these new features, please don't hesitate to reach out.
+# Clean up
+spark.sql("DROP VIEW global_temp.Temp_InstitutionsList")
