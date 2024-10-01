@@ -1,14 +1,43 @@
 -- Create a global temporary view
-CREATE GLOBAL TEMPORARY VIEW MyGlobalTempTable AS
-SELECT 1 as id, 'Example' as name
+CREATE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
+SELECT 1 as id, 'University A' as name
 UNION ALL
-SELECT 2 as id, 'Data' as name;
+SELECT 2 as id, 'University B' as name;
 
--- Access the global temporary view
-SELECT * FROM global_temp.MyGlobalTempTable;
+-- Simulate User 1's session
+-- User 1 reads the view
+SELECT 'User 1 reading the view' as action;
+SELECT * FROM global_temp.SharedInstitutionsList;
 
--- In a different session or notebook, you can access it like this:
-SELECT * FROM global_temp.MyGlobalTempTable;
+-- User 1 attempts to add data (this creates a new view, doesn't modify the original)
+SELECT 'User 1 attempting to add data' as action;
+CREATE OR REPLACE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
+SELECT * FROM global_temp.SharedInstitutionsList
+UNION ALL
+SELECT 3 as id, 'University C' as name;
 
--- When you're done, you can drop the view
-DROP VIEW global_temp.MyGlobalTempTable;
+-- User 1 reads the view again (sees their changes)
+SELECT 'User 1 reading the view again' as action;
+SELECT * FROM global_temp.SharedInstitutionsList;
+
+-- Simulate User 2's session
+-- User 2 reads the view (may or may not see User 1's changes, depending on caching)
+SELECT 'User 2 reading the view' as action;
+SELECT * FROM global_temp.SharedInstitutionsList;
+
+-- User 2 attempts to modify data
+SELECT 'User 2 attempting to modify data' as action;
+CREATE OR REPLACE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
+SELECT id, CASE WHEN id = 1 THEN 'Modified University A' ELSE name END as name
+FROM global_temp.SharedInstitutionsList;
+
+-- User 2 reads the view again (sees their changes)
+SELECT 'User 2 reading the view again' as action;
+SELECT * FROM global_temp.SharedInstitutionsList;
+
+-- Final state of the view (may vary depending on caching and which "user" acted last)
+SELECT 'Final state of the view' as action;
+SELECT * FROM global_temp.SharedInstitutionsList;
+
+-- Clean up
+DROP VIEW global_temp.SharedInstitutionsList;
