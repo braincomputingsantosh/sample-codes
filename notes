@@ -5,47 +5,47 @@ UNION ALL
 SELECT 2 as id, 'University B' as name;
 
 -- Simulate User 1's session
--- User 1 reads the view
 SELECT 'User 1 reading the view' as action;
 SELECT * FROM global_temp.SharedInstitutionsList;
 
--- User 1 attempts to add data (this creates a new view, doesn't modify the original)
-SELECT 'User 1 attempting to add data' as action;
+-- User 1 creates a new view with added data
+SELECT 'User 1 creating updated view' as action;
 CREATE GLOBAL TEMPORARY VIEW User1UpdatedView AS
 SELECT * FROM global_temp.SharedInstitutionsList
 UNION ALL
 SELECT 3 as id, 'University C' as name;
 
--- User 1 reads their updated view
-SELECT 'User 1 reading their updated view' as action;
-SELECT * FROM global_temp.User1UpdatedView;
-
 -- Simulate User 2's session
--- User 2 reads the original view
 SELECT 'User 2 reading the original view' as action;
 SELECT * FROM global_temp.SharedInstitutionsList;
 
--- User 2 attempts to modify data
-SELECT 'User 2 attempting to modify data' as action;
+-- User 2 creates a new view with modified data
+SELECT 'User 2 creating modified view' as action;
 CREATE GLOBAL TEMPORARY VIEW User2UpdatedView AS
 SELECT id, CASE WHEN id = 1 THEN 'Modified University A' ELSE name END as name
 FROM global_temp.SharedInstitutionsList;
 
--- User 2 reads their updated view
-SELECT 'User 2 reading their updated view' as action;
-SELECT * FROM global_temp.User2UpdatedView;
-
--- Show the state of all views
-SELECT 'Original SharedInstitutionsList' as view_name;
+-- Display the contents of all views before dropping
+SELECT 'Contents of SharedInstitutionsList (original view):' as view_name;
 SELECT * FROM global_temp.SharedInstitutionsList;
 
-SELECT 'User1UpdatedView' as view_name;
+SELECT 'Contents of User1UpdatedView:' as view_name;
 SELECT * FROM global_temp.User1UpdatedView;
 
-SELECT 'User2UpdatedView' as view_name;
+SELECT 'Contents of User2UpdatedView:' as view_name;
 SELECT * FROM global_temp.User2UpdatedView;
 
 -- Clean up
+SELECT 'Dropping views' as action;
 DROP VIEW global_temp.SharedInstitutionsList;
 DROP VIEW global_temp.User1UpdatedView;
 DROP VIEW global_temp.User2UpdatedView;
+
+-- Verify that views have been dropped
+SELECT 'Attempting to query dropped views:' as action;
+SELECT 'SharedInstitutionsList:' as view_name;
+SELECT * FROM global_temp.SharedInstitutionsList; -- This will produce an error
+SELECT 'User1UpdatedView:' as view_name;
+SELECT * FROM global_temp.User1UpdatedView; -- This will produce an error
+SELECT 'User2UpdatedView:' as view_name;
+SELECT * FROM global_temp.User2UpdatedView; -- This will produce an error
