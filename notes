@@ -1,51 +1,114 @@
--- Create a global temporary view
-CREATE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
-SELECT 1 as id, 'University A' as name
-UNION ALL
-SELECT 2 as id, 'University B' as name;
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
+from delta.tables import *
+from pyspark.sql.window import Window
 
--- Simulate User 1's session
-SELECT 'User 1 reading the view' as action;
-SELECT * FROM global_temp.SharedInstitutionsList;
+# Create a Spark session
+spark = SparkSession.builder.appName("StreamingUpsertWithValidation").getOrCreate()
 
--- User 1 creates a new view with added data
-SELECT 'User 1 creating updated view' as action;
-CREATE GLOBAL TEMPORARY VIEW User1UpdatedView AS
-SELECT * FROM global_temp.SharedInstitutionsList
-UNION ALL
-SELECT 3 as id, 'University C' as name;
+# Create a sample Silver table if it doesn't exist
+spark.sql("""
+CREATE TABLE IF NOT EXISTS silver_customer_table (
+  customer_id INT,
+  name STRING,
+  email STRING,
+  updated_at TIMESTAMP
+) USING DELTA
+""")
 
--- Simulate User 2's session
-SELECT 'User 2 reading the original view' as action;
-SELECT * FROM global_temp.SharedInstitutionsList;
+# Insert some initial data
+spark.sql("""
+INSERT INTO silver_customer_table VALUES 
+  (1, 'John Doe', 'john.doe@example.com', current_timestamp()),
+  (2, 'Jane Smith', 'jane.smith@example.com', current_timestamp())
+""")
 
--- User 2 creates a new view with modified data
-SELECT 'User 2 creating modified view' as action;
-CREATE GLOBAL TEMPORARY VIEW User2UpdatedView AS
-SELECT id, CASE WHEN id = 1 THEN 'Modified University A' ELSE name END as name
-FROM global_temp.SharedInstitutionsList;
+# Create a sample streaming source (for demonstration purposes)
+def generate_stream_data():
+    data = [
+        (1, "John Doe", "john.updated@example.com", current_timestamp()),
+        (3, "Alice Johnson", "alice.johnson@example.com", current_timestamp()),
+        (2, "Jane Smith", "jane.updated@example.com", current_timestamp()),
+        (4, "Bob Wilson", "bob.wilson@example.com", current_timestamp())
+    ]
+    return spark.createDataFrame(data, ["customer_id", "name", "email", "updated_at"])
 
--- Display the contents of all views before dropping
-SELECT 'Contents of SharedInstitutionsList (original view):' as view_name;
-SELECT * FROM global_temp.SharedInstitutionsList;
+stream_data = generate_stream_data()
+stream_data.createOrReplaceTempView("stream_source")
 
-SELECT 'Contents of User1UpdatedView:' as view_name;
-SELECT * FROM global_temp.User1UpdatedView;
+# Set up the streaming read
+stream_df = spark.readStream.table("stream_source")
 
-SELECT 'Contents of User2UpdatedView:' as view_name;
-SELECT * FROM global_temp.User2UpdatedView;
+# Define the upsert function
+def upsert_to_silver(microBatchOutputDF, batchId):
+    # Create a Delta table object for the target table
+    delta_table = DeltaTable.forName(spark, "silver_customer_table")
 
--- Clean up
-SELECT 'Dropping views' as action;
-DROP VIEW global_temp.SharedInstitutionsList;
-DROP VIEW global_temp.User1UpdatedView;
-DROP VIEW global_temp.User2UpdatedView;
+    # Perform the upsert operation
+    (delta_table.alias("target")
+     .merge(microBatchOutputDF.alias("source"), "target.customer_id = source.customer_id")
+     .whenMatchedUpdateAll()
+     .whenNotMatchedInsertAll()
+     .execute())
 
--- Verify that views have been dropped
-SELECT 'Attempting to query dropped views:' as action;
-SELECT 'SharedInstitutionsList:' as view_name;
-SELECT * FROM global_temp.SharedInstitutionsList; -- This will produce an error
-SELECT 'User1UpdatedView:' as view_name;
-SELECT * FROM global_temp.User1UpdatedView; -- This will produce an error
-SELECT 'User2UpdatedView:' as view_name;
-SELECT * FROM global_temp.User2UpdatedView; -- This will produce an error
+    # Run validation after upsert
+    validate_upsert(microBatchOutputDF, batchId)
+
+# Validation function
+def validate_upsert(microBatchOutputDF, batchId):
+    print(f"Validating upsert for batch {batchId}")
+
+    # Get the latest data from silver table
+    silver_df = spark.table("silver_customer_table")
+
+    # 1. Check for data loss
+    source_count = microBatchOutputDF.count()
+    silver_count = silver_df.count()
+    if silver_count < source_count:
+        print(f"WARNING: Possible data loss. Source records: {source_count}, Silver records: {silver_count}")
+
+    # 2. Check for duplicate customer_ids
+    duplicate_check = silver_df.groupBy("customer_id").count().filter(col("count") > 1)
+    if duplicate_check.count() > 0:
+        print("ERROR: Duplicate customer_ids found in silver table")
+        duplicate_check.show()
+
+    # 3. Verify all source records are in silver table
+    joined_df = microBatchOutputDF.join(silver_df, "customer_id", "left_anti")
+    if joined_df.count() > 0:
+        print("ERROR: Some source records are missing in silver table")
+        joined_df.show()
+
+    # 4. Check for null values in important fields
+    null_check = silver_df.filter(col("email").isNull() | col("name").isNull())
+    if null_check.count() > 0:
+        print("WARNING: Null values found in important fields")
+        null_check.show()
+
+    # 5. Verify update timestamps
+    window_spec = Window.partitionBy("customer_id").orderBy(desc("updated_at"))
+    latest_records = silver_df.withColumn("row", row_number().over(window_spec)).filter(col("row") == 1)
+    outdated_records = latest_records.join(microBatchOutputDF, "customer_id", "inner") \
+        .filter(latest_records.updated_at < microBatchOutputDF.updated_at)
+    if outdated_records.count() > 0:
+        print("ERROR: Some records in silver table are outdated")
+        outdated_records.show()
+
+    print("Validation complete.")
+
+# Start the streaming query
+query = (stream_df.writeStream
+         .foreachBatch(upsert_to_silver)
+         .outputMode("update")
+         .trigger(once=True)  # For demonstration; use processingTime in production
+         .start())
+
+# Wait for the streaming job to finish
+query.awaitTermination()
+
+# Show the final results
+print("Silver table after streaming upserts:")
+spark.sql("SELECT * FROM silver_customer_table ORDER BY customer_id").show()
+
+# Clean up (uncomment if you want to drop the table after the demo)
+# spark.sql("DROP TABLE IF EXISTS silver_customer_table")
