@@ -1,22 +1,74 @@
-This simulation demonstrates several important behaviors when multiple users work with the same global temporary view:
+# Create a global temporary view
+spark.sql("""
+CREATE GLOBAL TEMPORARY VIEW global_temp.MyGlobalTempTable AS
+SELECT 1 as id, 'Example' as name
+UNION ALL
+SELECT 2 as id, 'Data' as name
+""")
 
-Visibility: Both users can see and query the same global temporary view.
-Read Consistency: Both users see the same initial data when they query the view.
-Isolation: When a user attempts to modify the data (by creating a new DataFrame with additional data), these changes are local to their session and do not affect the original global temporary view.
-Immutability: The createOrReplaceGlobalTempView call doesn't actually modify the original view for other sessions. It creates a new view that's only visible within the current session.
-Persistence of Original Data: The final state shows that the original global temporary view remains unchanged, regardless of the operations performed by individual users.
+# Access the global temporary view
+spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
 
-Key takeaways:
+# In a different session or notebook, you can access it like this:
+spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
 
-Global temporary views provide a read-only shared view of data across sessions.
-Modifications made by one user do not affect what other users see.
-There's no built-in mechanism for one user to update the global temporary view in a way that's immediately visible to other users.
-To share modifications, users would need to create a new global temporary view or use a persistent table.
+# When you're done, you can drop the view
+spark.sql("DROP VIEW global_temp.MyGlobalTempTable")
 
-In practice, if you need shared, mutable data that multiple users can update and immediately see each other's changes, you should consider using:
 
-Delta Lake tables, which provide ACID transactions and better support for concurrent operations.
-Regular persistent tables with proper concurrency control mechanisms.
-External systems designed for concurrent multi-user access, like traditional databases.
 
-Global temporary views are best used for sharing read-only reference data or intermediate results within a Spark application, rather than for collaborative, mutable datasets.
+Yes, there is a way to make a temporary table global in Databricks. This is done using a Global Temporary View. Let me explain this concept and how to implement it:
+
+1. Global Temporary Views:
+   - Created using the syntax `CREATE GLOBAL TEMPORARY VIEW`
+   - Visible to all sessions within the same Spark application
+   - Persist for the lifetime of the Spark application
+   - Stored in the `global_temp` database
+
+Here's how you can create and use a global temporary view:
+
+
+
+```python
+# Create a global temporary view
+spark.sql("""
+CREATE GLOBAL TEMPORARY VIEW global_temp.MyGlobalTempTable AS
+SELECT 1 as id, 'Example' as name
+UNION ALL
+SELECT 2 as id, 'Data' as name
+""")
+
+# Access the global temporary view
+spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
+
+# In a different session or notebook, you can access it like this:
+spark.sql("SELECT * FROM global_temp.MyGlobalTempTable").show()
+
+# When you're done, you can drop the view
+spark.sql("DROP VIEW global_temp.MyGlobalTempTable")
+
+```
+
+Key points about global temporary views:
+
+1. Scope: They are visible across all sessions within the same Spark application, making them more "global" than regular temporary views.
+
+2. Naming: Always prefixed with `global_temp.` when referring to them in queries.
+
+3. Lifetime: They persist for the duration of the Spark application, not just a single session.
+
+4. Use cases: Useful for sharing temporary data across multiple notebooks or jobs within the same Spark application.
+
+5. Limitations: 
+   - They don't persist across different Spark applications.
+   - They're not as durable as permanent tables.
+   - Modifications to the view in one session don't affect other sessions.
+
+6. Best practices:
+   - Use them judiciously to avoid cluttering the global namespace.
+   - Remember to drop them when they're no longer needed.
+   - Be aware that they consume cluster resources.
+
+It's important to note that while global temporary views provide a way to share temporary data more broadly than session-scoped temporary views, they are not equivalent to permanent tables. If you need truly persistent, shared data that survives across Spark application restarts, you should consider using permanent tables, possibly with Delta Lake for additional features and performance benefits.
+
+Would you like me to elaborate on any aspect of global temporary views or show you how to use them in a more complex scenario?
