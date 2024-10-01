@@ -2,79 +2,76 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 from pyspark.sql.types import *
 from delta.tables import *
+import time
 
 # Create a Spark session
-spark = SparkSession.builder.appName("CorrectStreamingUpsert").getOrCreate()
+spark = SparkSession.builder.appName("BK_MPO_UpsertStreaming").getOrCreate()
 
-# Create a sample Silver table if it doesn't exist
-spark.sql("""
-CREATE TABLE IF NOT EXISTS silver_customer_table (
-  customer_id INT,
-  name STRING,
-  email STRING,
-  updated_at TIMESTAMP
-) USING DELTA
-""")
-
-# Insert some initial data
-spark.sql("""
-INSERT INTO silver_customer_table VALUES 
-  (1, 'John Doe', 'john.doe@example.com', current_timestamp()),
-  (2, 'Jane Smith', 'jane.smith@example.com', current_timestamp())
-""")
-
-# Define the schema for our streaming data
-schema = StructType([
-    StructField("customer_id", IntegerType(), True),
-    StructField("name", StringType(), True),
-    StructField("email", StringType(), True),
-    StructField("updated_at", TimestampType(), True)
-])
-
-# Create a streaming source using rate source and add mock data
-stream_df = (spark.readStream.format("rate").option("rowsPerSecond", 1).load()
-             .withColumn("customer_id", (col("value") % 4 + 1).cast(IntegerType()))
-             .withColumn("name", when(col("customer_id") == 1, "John Doe")
-                         .when(col("customer_id") == 2, "Jane Smith")
-                         .when(col("customer_id") == 3, "Alice Johnson")
-                         .otherwise("Bob Wilson"))
-             .withColumn("email", concat(lower(col("name").substr(1, 1)), 
-                                         lower(split(col("name"), " ")[1]), 
-                                         lit("@example.com")))
-             .withColumn("updated_at", current_timestamp())
-             .select("customer_id", "name", "email", "updated_at"))
+source_table = 'bk_mpo_raw.loan_arm'
+target_table = 'test_bk_mpo.test_loan_arm'
+merge_condition = "target.loan_id = source.loan_id"
 
 # Define the upsert function
 def upsert_to_silver(microBatchOutputDF, batchId):
-    # Create a Delta table object for the target table
-    delta_table = DeltaTable.forName(spark, "silver_customer_table")
+    try:
+        # Create a Delta table object for the target table
+        delta_table = DeltaTable.forName(spark, target_table)
+        
+        # Perform the upsert operation
+        (delta_table.alias("target")
+         .merge(microBatchOutputDF.alias("source"), merge_condition)
+         .whenMatchedUpdateAll()
+         .whenNotMatchedInsertAll()
+         .execute())
+        
+        print(f"Batch {batchId} completed")
+    except Exception as e:
+        print(f"Error in batch {batchId}: {str(e)}")
+        raise  # Re-raise the exception to stop the stream
 
-    # Perform the upsert operation
-    (delta_table.alias("target")
-     .merge(microBatchOutputDF.alias("source"), "target.customer_id = source.customer_id")
-     .whenMatchedUpdateAll()
-     .whenNotMatchedInsertAll()
-     .execute())
+# Function to get and print table schema
+def print_table_schema(table_name):
+    try:
+        schema = spark.table(table_name).schema
+        print(f"Schema of {table_name}:")
+        for field in schema.fields:
+            print(f"- {field.name}: {field.dataType}")
+    except Exception as e:
+        print(f"Error reading schema of {table_name}: {str(e)}")
 
-    print(f"Batch {batchId} completed")
+# Print schemas of both tables
+print_table_schema(source_table)
+print_table_schema(target_table)
 
-# Start the streaming query
-query = (stream_df.writeStream
-         .foreachBatch(upsert_to_silver)
-         .outputMode("update")
-         .trigger(processingTime='10 seconds')
-         .start())
+try:
+    # Read from the source table as a stream
+    source_stream = (spark.readStream
+                     .format("delta")
+                     .table(source_table)
+                     .withColumn("processed_timestamp", current_timestamp()))
 
-# Wait for the streaming job to process a few batches
-import time
-time.sleep(60)  # Run for 60 seconds
+    # Start the streaming query
+    query = (source_stream.writeStream
+             .foreachBatch(upsert_to_silver)
+             .outputMode("update")
+             .trigger(processingTime='100 seconds')
+             .start())
 
-# Stop the query
-query.stop()
+    # Monitor the streaming query
+    while query.isActive:
+        print(f"Query status: {query.status}")
+        if query.lastProgress:
+            print(f"Last progress: {query.lastProgress}")
+        time.sleep(10)  # Wait for 10 seconds before checking again
 
-# Show the final results
-print("Silver table after streaming upserts:")
-spark.sql("SELECT * FROM silver_customer_table ORDER BY customer_id").show()
+except Exception as e:
+    print(f"Error starting or running the streaming query: {str(e)}")
+finally:
+    if 'query' in locals() and query.isActive:
+        query.stop()
+    print("Streaming query has stopped.")
 
-# Clean up (uncomment if you want to drop the table after the demo)
-# spark.sql("DROP TABLE IF EXISTS silver_customer_table")
+# After stopping, you can check the target table:
+print("Final state of the target table:")
+spark.sql(f"SELECT COUNT(*) FROM {target_table}").show()
+spark.sql(f"SELECT * FROM {target_table} LIMIT 5").show()
