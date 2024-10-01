@@ -1,77 +1,125 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
-from pyspark.sql.types import *
 from delta.tables import *
 import time
+from pyspark.sql.utils import AnalysisException, StreamingQueryException
+import sys
+from typing import Dict, Any
 
-# Create a Spark session
-spark = SparkSession.builder.appName("BK_MPO_UpsertStreaming").getOrCreate()
+spark = SparkSession.builder.appName("BK_MPO_ResilientStreamingUpsert").getOrCreate()
 
 source_table = 'bk_mpo_raw.loan_arm'
 target_table = 'test_bk_mpo.test_loan_arm'
 merge_condition = "target.loan_id = source.loan_id"
 
-# Define the upsert function
-def upsert_to_silver(microBatchOutputDF, batchId):
+def log_message(message: str):
+    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
+
+def retry_operation(operation, max_retries=3, delay=5):
+    retries = 0
+    while retries < max_retries:
+        try:
+            return operation()
+        except Exception as e:
+            retries += 1
+            log_message(f"Operation failed. Retry {retries}/{max_retries}. Error: {str(e)}")
+            if retries == max_retries:
+                raise
+            time.sleep(delay)
+
+def check_schema_compatibility(source_schema, target_schema):
+    source_fields = set(f.name for f in source_schema.fields)
+    target_fields = set(f.name for f in target_schema.fields)
+    if not source_fields.issubset(target_fields):
+        missing_fields = source_fields - target_fields
+        log_message(f"Warning: Source schema has fields not present in target: {missing_fields}")
+    return True
+
+def upsert_to_silver(microBatchOutputDF: DataFrame, batchId: int):
     try:
-        # Create a Delta table object for the target table
+        log_message(f"Starting to process batch {batchId}")
+        log_message(f"Batch {batchId} schema: {microBatchOutputDF.schema}")
+        log_message(f"Batch {batchId} count: {microBatchOutputDF.count()}")
+        
         delta_table = DeltaTable.forName(spark, target_table)
+        target_schema = delta_table.toDF().schema
         
-        # Perform the upsert operation
-        (delta_table.alias("target")
-         .merge(microBatchOutputDF.alias("source"), merge_condition)
-         .whenMatchedUpdateAll()
-         .whenNotMatchedInsertAll()
-         .execute())
+        if not check_schema_compatibility(microBatchOutputDF.schema, target_schema):
+            raise ValueError("Schema incompatibility detected")
         
-        print(f"Batch {batchId} completed")
+        exclude_columns = ["dms_extract_time", "file_id"]
+        target_columns = spark.table(target_table).columns
+        
+        update_columns = {col: f"source.{col}" for col in target_columns 
+                          if col not in exclude_columns and col != 'loan_id' and col in microBatchOutputDF.columns}
+        update_columns['last_updated'] = "current_timestamp()"
+        
+        insert_columns = {col: f"source.{col}" for col in target_columns 
+                          if col not in exclude_columns and col in microBatchOutputDF.columns}
+        insert_columns['created_at'] = "current_timestamp()"
+        insert_columns['last_updated'] = "current_timestamp()"
+        
+        log_message(f"Batch {batchId} update columns: {update_columns}")
+        log_message(f"Batch {batchId} insert columns: {insert_columns}")
+        
+        def merge_operation():
+            (delta_table.alias("target")
+             .merge(microBatchOutputDF.alias("source"), merge_condition)
+             .whenMatchedUpdate(set=update_columns)
+             .whenNotMatchedInsert(values=insert_columns)
+             .execute())
+        
+        retry_operation(merge_operation)
+        
+        log_message(f"Batch {batchId} completed successfully")
     except Exception as e:
-        print(f"Error in batch {batchId}: {str(e)}")
-        raise  # Re-raise the exception to stop the stream
+        log_message(f"Error in batch {batchId}: {str(e)}")
+        log_message(f"Error traceback: {sys.exc_info()[2]}")
+        raise
 
-# Function to get and print table schema
-def print_table_schema(table_name):
-    try:
-        schema = spark.table(table_name).schema
-        print(f"Schema of {table_name}:")
-        for field in schema.fields:
-            print(f"- {field.name}: {field.dataType}")
-    except Exception as e:
-        print(f"Error reading schema of {table_name}: {str(e)}")
-
-# Print schemas of both tables
-print_table_schema(source_table)
-print_table_schema(target_table)
+def log_streaming_query(query):
+    iteration = 0
+    while query.isActive:
+        iteration += 1
+        log_message(f"Query status (iteration {iteration}): {query.status}")
+        if query.lastProgress:
+            log_message(f"Last progress: {query.lastProgress}")
+        time.sleep(10)
 
 try:
-    # Read from the source table as a stream
-    source_stream = (spark.readStream
-                     .format("delta")
-                     .table(source_table)
-                     .withColumn("processed_timestamp", current_timestamp()))
+    log_message("Starting the streaming job")
+    log_message(f"Source table: {source_table}")
+    log_message(f"Target table: {target_table}")
+    
+    log_message("Source table schema:")
+    spark.table(source_table).printSchema()
+    
+    log_message("Target table schema:")
+    spark.table(target_table).printSchema()
 
-    # Start the streaming query
+    source_stream = spark.readStream.table(source_table)
+
     query = (source_stream.writeStream
              .foreachBatch(upsert_to_silver)
              .outputMode("update")
              .trigger(processingTime='100 seconds')
+             .option("checkpointLocation", "/tmp/delta/events/_checkpoints/")
              .start())
 
-    # Monitor the streaming query
-    while query.isActive:
-        print(f"Query status: {query.status}")
-        if query.lastProgress:
-            print(f"Last progress: {query.lastProgress}")
-        time.sleep(10)  # Wait for 10 seconds before checking again
+    log_streaming_query(query)
 
+except AnalysisException as ae:
+    log_message(f"Analysis Exception occurred: {str(ae)}")
+except StreamingQueryException as sqe:
+    log_message(f"Streaming Query Exception occurred: {str(sqe)}")
 except Exception as e:
-    print(f"Error starting or running the streaming query: {str(e)}")
+    log_message(f"An unexpected error occurred: {str(e)}")
+    log_message(f"Error traceback: {sys.exc_info()[2]}")
 finally:
     if 'query' in locals() and query.isActive:
         query.stop()
-    print("Streaming query has stopped.")
+    log_message("Streaming query has stopped.")
 
-# After stopping, you can check the target table:
-print("Final state of the target table:")
+log_message("Final state of the target table:")
 spark.sql(f"SELECT COUNT(*) FROM {target_table}").show()
 spark.sql(f"SELECT * FROM {target_table} LIMIT 5").show()
