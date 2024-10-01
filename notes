@@ -3,9 +3,10 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import StructType, StructField, IntegerType, StringType, TimestampType
 from delta.tables import *
 from pyspark.sql.window import Window
+from datetime import datetime
 
 # Create a Spark session
-spark = SparkSession.builder.appName("StreamingUpsertFixedSchema").getOrCreate()
+spark = SparkSession.builder.appName("StreamingUpsertFixedTimestamp").getOrCreate()
 
 # Create a sample Silver table if it doesn't exist
 spark.sql("""
@@ -34,11 +35,12 @@ schema = StructType([
 
 # Create a sample streaming source (for demonstration purposes)
 def generate_stream_data():
+    current_time = datetime.now()
     data = [
-        (1, "John Doe", "john.updated@example.com", current_timestamp()),
-        (3, "Alice Johnson", "alice.johnson@example.com", current_timestamp()),
-        (2, "Jane Smith", "jane.updated@example.com", current_timestamp()),
-        (4, "Bob Wilson", "bob.wilson@example.com", current_timestamp())
+        (1, "John Doe", "john.updated@example.com", current_time),
+        (3, "Alice Johnson", "alice.johnson@example.com", current_time),
+        (2, "Jane Smith", "jane.updated@example.com", current_time),
+        (4, "Bob Wilson", "bob.wilson@example.com", current_time)
     ]
     return spark.createDataFrame(data, schema)
 
@@ -63,10 +65,47 @@ def upsert_to_silver(microBatchOutputDF, batchId):
     # Run validation after upsert
     validate_upsert(microBatchOutputDF, batchId)
 
-# Validation function (same as before)
+# Validation function
 def validate_upsert(microBatchOutputDF, batchId):
     print(f"Validating upsert for batch {batchId}")
-    # ... (rest of the validation function remains the same)
+    
+    # Get the latest data from silver table
+    silver_df = spark.table("silver_customer_table")
+
+    # 1. Check for data loss
+    source_count = microBatchOutputDF.count()
+    silver_count = silver_df.count()
+    if silver_count < source_count:
+        print(f"WARNING: Possible data loss. Source records: {source_count}, Silver records: {silver_count}")
+
+    # 2. Check for duplicate customer_ids
+    duplicate_check = silver_df.groupBy("customer_id").count().filter(col("count") > 1)
+    if duplicate_check.count() > 0:
+        print("ERROR: Duplicate customer_ids found in silver table")
+        duplicate_check.show()
+
+    # 3. Verify all source records are in silver table
+    joined_df = microBatchOutputDF.join(silver_df, "customer_id", "left_anti")
+    if joined_df.count() > 0:
+        print("ERROR: Some source records are missing in silver table")
+        joined_df.show()
+
+    # 4. Check for null values in important fields
+    null_check = silver_df.filter(col("email").isNull() | col("name").isNull())
+    if null_check.count() > 0:
+        print("WARNING: Null values found in important fields")
+        null_check.show()
+
+    # 5. Verify update timestamps
+    window_spec = Window.partitionBy("customer_id").orderBy(desc("updated_at"))
+    latest_records = silver_df.withColumn("row", row_number().over(window_spec)).filter(col("row") == 1)
+    outdated_records = latest_records.join(microBatchOutputDF, "customer_id", "inner") \
+        .filter(latest_records.updated_at < microBatchOutputDF.updated_at)
+    if outdated_records.count() > 0:
+        print("ERROR: Some records in silver table are outdated")
+        outdated_records.show()
+
+    print("Validation complete.")
 
 # Start the streaming query
 query = (stream_df.writeStream
