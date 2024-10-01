@@ -11,33 +11,41 @@ SELECT * FROM global_temp.SharedInstitutionsList;
 
 -- User 1 attempts to add data (this creates a new view, doesn't modify the original)
 SELECT 'User 1 attempting to add data' as action;
-CREATE OR REPLACE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
+CREATE GLOBAL TEMPORARY VIEW User1UpdatedView AS
 SELECT * FROM global_temp.SharedInstitutionsList
 UNION ALL
 SELECT 3 as id, 'University C' as name;
 
--- User 1 reads the view again (sees their changes)
-SELECT 'User 1 reading the view again' as action;
-SELECT * FROM global_temp.SharedInstitutionsList;
+-- User 1 reads their updated view
+SELECT 'User 1 reading their updated view' as action;
+SELECT * FROM global_temp.User1UpdatedView;
 
 -- Simulate User 2's session
--- User 2 reads the view (may or may not see User 1's changes, depending on caching)
-SELECT 'User 2 reading the view' as action;
+-- User 2 reads the original view
+SELECT 'User 2 reading the original view' as action;
 SELECT * FROM global_temp.SharedInstitutionsList;
 
 -- User 2 attempts to modify data
 SELECT 'User 2 attempting to modify data' as action;
-CREATE OR REPLACE GLOBAL TEMPORARY VIEW SharedInstitutionsList AS
+CREATE GLOBAL TEMPORARY VIEW User2UpdatedView AS
 SELECT id, CASE WHEN id = 1 THEN 'Modified University A' ELSE name END as name
 FROM global_temp.SharedInstitutionsList;
 
--- User 2 reads the view again (sees their changes)
-SELECT 'User 2 reading the view again' as action;
+-- User 2 reads their updated view
+SELECT 'User 2 reading their updated view' as action;
+SELECT * FROM global_temp.User2UpdatedView;
+
+-- Show the state of all views
+SELECT 'Original SharedInstitutionsList' as view_name;
 SELECT * FROM global_temp.SharedInstitutionsList;
 
--- Final state of the view (may vary depending on caching and which "user" acted last)
-SELECT 'Final state of the view' as action;
-SELECT * FROM global_temp.SharedInstitutionsList;
+SELECT 'User1UpdatedView' as view_name;
+SELECT * FROM global_temp.User1UpdatedView;
+
+SELECT 'User2UpdatedView' as view_name;
+SELECT * FROM global_temp.User2UpdatedView;
 
 -- Clean up
 DROP VIEW global_temp.SharedInstitutionsList;
+DROP VIEW global_temp.User1UpdatedView;
+DROP VIEW global_temp.User2UpdatedView;
