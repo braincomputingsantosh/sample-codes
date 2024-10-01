@@ -1,39 +1,22 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit
+This simulation demonstrates several important behaviors when multiple users work with the same global temporary view:
 
-# Create a SparkSession (this is usually pre-created in Databricks notebooks)
-spark = SparkSession.builder.appName("MultiUserTempTableSimulation").getOrCreate()
+Visibility: Both users can see and query the same global temporary view.
+Read Consistency: Both users see the same initial data when they query the view.
+Isolation: When a user attempts to modify the data (by creating a new DataFrame with additional data), these changes are local to their session and do not affect the original global temporary view.
+Immutability: The createOrReplaceGlobalTempView call doesn't actually modify the original view for other sessions. It creates a new view that's only visible within the current session.
+Persistence of Original Data: The final state shows that the original global temporary view remains unchanged, regardless of the operations performed by individual users.
 
-# Create a global temporary view
-spark.sql("""
-CREATE GLOBAL TEMPORARY VIEW global_temp.Temp_InstitutionsList AS
-SELECT 1 as id, 'University A' as name
-UNION ALL
-SELECT 2 as id, 'University B' as name
-""")
+Key takeaways:
 
-# Function to simulate a user interacting with the global temp view
-def simulate_user(user_id):
-    print(f"User {user_id} accessing the global temporary view:")
-    
-    # Read from the global temporary view
-    df = spark.sql("SELECT * FROM global_temp.Temp_InstitutionsList")
-    df.show()
-    
-    # Simulate adding data (note: this doesn't actually modify the view for other users)
-    new_data = spark.createDataFrame([(3, f"University {user_id}")], ["id", "name"])
-    combined_df = df.union(new_data)
-    
-    print(f"User {user_id} after adding data (local to this session):")
-    combined_df.show()
+Global temporary views provide a read-only shared view of data across sessions.
+Modifications made by one user do not affect what other users see.
+There's no built-in mechanism for one user to update the global temporary view in a way that's immediately visible to other users.
+To share modifications, users would need to create a new global temporary view or use a persistent table.
 
-# Simulate multiple users
-simulate_user("A")
-simulate_user("B")
+In practice, if you need shared, mutable data that multiple users can update and immediately see each other's changes, you should consider using:
 
-# Check the original global temporary view
-print("Original global temporary view remains unchanged:")
-spark.sql("SELECT * FROM global_temp.Temp_InstitutionsList").show()
+Delta Lake tables, which provide ACID transactions and better support for concurrent operations.
+Regular persistent tables with proper concurrency control mechanisms.
+External systems designed for concurrent multi-user access, like traditional databases.
 
-# Clean up
-spark.sql("DROP VIEW global_temp.Temp_InstitutionsList")
+Global temporary views are best used for sharing read-only reference data or intermediate results within a Spark application, rather than for collaborative, mutable datasets.
