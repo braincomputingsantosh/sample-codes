@@ -1,48 +1,15 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from delta.tables import *
-import time
-from pyspark.sql.utils import AnalysisException, StreamingQueryException
-import sys
-from typing import Dict, Any
-
-spark = SparkSession.builder.appName("BK_MPO_ResilientStreamingUpsert").getOrCreate()
-
-source_table = 'bk_mpo_raw.loan_arm'
-target_table = 'test_bk_mpo.test_loan_arm'
-merge_condition = "target.loan_id = source.loan_id"
-
-def log_message(message: str):
-    print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {message}")
-
-def retry_operation(operation, max_retries=3, delay=5):
-    retries = 0
-    while retries < max_retries:
-        try:
-            return operation()
-        except Exception as e:
-            retries += 1
-            log_message(f"Operation failed. Retry {retries}/{max_retries}. Error: {str(e)}")
-            if retries == max_retries:
-                raise
-            time.sleep(delay)
-
-def check_schema_compatibility(source_schema, target_schema):
-    source_fields = set(f.name for f in source_schema.fields)
-    target_fields = set(f.name for f in target_schema.fields)
-    if not source_fields.issubset(target_fields):
-        missing_fields = source_fields - target_fields
-        log_message(f"Warning: Source schema has fields not present in target: {missing_fields}")
-    return True
-
 def upsert_to_silver(microBatchOutputDF: DataFrame, batchId: int):
     try:
+        limited_df = microBatchOutputDF.limit(1000)
+        
         log_message(f"Starting to process batch {batchId}")
-        log_message(f"Batch {batchId} schema: {microBatchOutputDF.schema}")
-        log_message(f"Batch {batchId} count: {microBatchOutputDF.count()}")
+        log_message(f"Batch {batchId} schema: {limited_df.schema}")
+        log_message(f"Batch {batchId} count: {limited_df.count()}")
         
         delta_table = DeltaTable.forName(spark, target_table)
         target_schema = delta_table.toDF().schema
+        
+        log_message(f"Target table schema: {target_schema}")
         
         if not check_schema_compatibility(microBatchOutputDF.schema, target_schema):
             raise ValueError("Schema incompatibility detected")
@@ -52,19 +19,41 @@ def upsert_to_silver(microBatchOutputDF: DataFrame, batchId: int):
         
         update_columns = {col: f"source.{col}" for col in target_columns 
                           if col not in exclude_columns and col != 'loan_id' and col in microBatchOutputDF.columns}
-        update_columns['last_updated'] = "current_timestamp()"
         
         insert_columns = {col: f"source.{col}" for col in target_columns 
                           if col not in exclude_columns and col in microBatchOutputDF.columns}
-        insert_columns['created_at'] = "current_timestamp()"
-        insert_columns['last_updated'] = "current_timestamp()"
+        
+        # Only add timestamp columns if they exist in target table
+        if 'last_updated' in target_columns:
+            update_columns['last_updated'] = "current_timestamp()"
+            insert_columns['last_updated'] = "current_timestamp()"
+        
+        if 'created_at' in target_columns:
+            insert_columns['created_at'] = "current_timestamp()"
         
         log_message(f"Batch {batchId} update columns: {update_columns}")
         log_message(f"Batch {batchId} insert columns: {insert_columns}")
         
+        # Align the source_metadata schema with the target
+        if 'source_metadata' in microBatchOutputDF.columns and 'source_metadata' in target_columns:
+            from pyspark.sql.functions import col, struct, lit
+            
+            limited_df = limited_df.withColumn(
+                "source_metadata",
+                struct(
+                    col("source_metadata.file_path"),
+                    col("source_metadata.file_name"),
+                    col("source_metadata.file_size"),
+                    col("source_metadata.file_block_start"),
+                    col("source_metadata.file_block_length"),
+                    col("source_metadata.file_modification_time"),
+                    lit(None).cast("bigint").alias("row_index")
+                )
+            )
+        
         def merge_operation():
             (delta_table.alias("target")
-             .merge(microBatchOutputDF.alias("source"), merge_condition)
+             .merge(limited_df.alias("source"), merge_condition)
              .whenMatchedUpdate(set=update_columns)
              .whenNotMatchedInsert(values=insert_columns)
              .execute())
@@ -76,50 +65,3 @@ def upsert_to_silver(microBatchOutputDF: DataFrame, batchId: int):
         log_message(f"Error in batch {batchId}: {str(e)}")
         log_message(f"Error traceback: {sys.exc_info()[2]}")
         raise
-
-def log_streaming_query(query):
-    iteration = 0
-    while query.isActive:
-        iteration += 1
-        log_message(f"Query status (iteration {iteration}): {query.status}")
-        if query.lastProgress:
-            log_message(f"Last progress: {query.lastProgress}")
-        time.sleep(10)
-
-try:
-    log_message("Starting the streaming job")
-    log_message(f"Source table: {source_table}")
-    log_message(f"Target table: {target_table}")
-    
-    log_message("Source table schema:")
-    spark.table(source_table).printSchema()
-    
-    log_message("Target table schema:")
-    spark.table(target_table).printSchema()
-
-    source_stream = spark.readStream.table(source_table)
-
-    query = (source_stream.writeStream
-             .foreachBatch(upsert_to_silver)
-             .outputMode("update")
-             .trigger(processingTime='100 seconds')
-             .option("checkpointLocation", "/tmp/delta/events/_checkpoints/")
-             .start())
-
-    log_streaming_query(query)
-
-except AnalysisException as ae:
-    log_message(f"Analysis Exception occurred: {str(ae)}")
-except StreamingQueryException as sqe:
-    log_message(f"Streaming Query Exception occurred: {str(sqe)}")
-except Exception as e:
-    log_message(f"An unexpected error occurred: {str(e)}")
-    log_message(f"Error traceback: {sys.exc_info()[2]}")
-finally:
-    if 'query' in locals() and query.isActive:
-        query.stop()
-    log_message("Streaming query has stopped.")
-
-log_message("Final state of the target table:")
-spark.sql(f"SELECT COUNT(*) FROM {target_table}").show()
-spark.sql(f"SELECT * FROM {target_table} LIMIT 5").show()
