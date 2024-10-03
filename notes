@@ -1,8 +1,7 @@
 from pyspark.sql import SparkSession
 import logging
 import time
-from IPython.display import display, clear_output
-import ipywidgets as widgets
+import threading
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,22 +12,20 @@ dbutils.widgets.text("source_table", "", "Source Table")
 dbutils.widgets.text("target_table", "", "Target Table")
 dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table")
 
-def display_timer():
+def display_timer(stop_event):
     start_time = time.time()
-    timer = widgets.HTML(value="Elapsed time: 0 seconds")
-    display(timer)
-    
-    while True:
+    while not stop_event.is_set():
         elapsed_time = int(time.time() - start_time)
-        timer.value = f"Elapsed time: {elapsed_time} seconds"
-        yield
+        displayHTML(f"<h3>Elapsed time: {elapsed_time} seconds</h3>")
         time.sleep(1)
 
 def ingest_data(source_table, target_table, truncate='no'):
     logger.info(f"Starting ingestion process from {source_table} to {target_table}")
     start_time = time.time()
     
-    timer = display_timer()
+    stop_event = threading.Event()
+    timer_thread = threading.Thread(target=display_timer, args=(stop_event,))
+    timer_thread.start()
     
     try:
         # Create SparkSession
@@ -64,7 +61,8 @@ def ingest_data(source_table, target_table, truncate='no'):
         logger.error(error_message, exc_info=True)
         return False, error_message
     finally:
-        timer.close()
+        stop_event.set()
+        timer_thread.join()
 
 # Main execution
 try:
