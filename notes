@@ -75,27 +75,39 @@ function confirmTruncate(confirmed) {
         document.getElementById("startButtonDiv").style.display = "block";
         widgetValues.confirmation = "cancelled";
     }
-    IPython.notebook.kernel.execute(`dbutils.widgets.text("confirmation", "${widgetValues.confirmation}")`);
+    // Use Databricks-specific method to update widget
+    dbutils.widgets.text("confirmation", widgetValues.confirmation);
 }
 
 updateUI();
 
 // Set up interval to update UI every second
 setInterval(function() {
-    IPython.notebook.kernel.execute('print(json.dumps(get_widget_values()))', {
-        iopub: {
-            output: function(msg) {
-                widgetValues = JSON.parse(msg.content.text);
-                updateUI();
-            }
-        }
-    });
+    fetch('/api/2.0/workspace/runner/run', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+            commandString: 'print(json.dumps(get_widget_values()))',
+            language: 'python',
+            clusterId: clusterId
+        }})
+    }})
+    .then(response => response.json())
+    .then(data => {{
+        if (data.results && data.results.resultType === 'text') {{
+            widgetValues = JSON.parse(data.results.data);
+            updateUI();
+        }}
+    }});
 }, 1000);
 </script>
 """
 
+# Get the current cluster ID
+clusterId = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
+
 # Display the HTML
-displayHTML(html_template.replace("{widget_values}", json.dumps(get_widget_values())))
+displayHTML(html_template.replace("{widget_values}", json.dumps(get_widget_values())).replace("clusterId", f"'{clusterId}'"))
 
 def update_timer(stop_event):
     start_time = time.time()
