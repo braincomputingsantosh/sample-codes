@@ -13,8 +13,7 @@ dbutils.widgets.removeAll()
 dbutils.widgets.text("source_table", "", "Source Table")
 dbutils.widgets.text("target_table", "", "Target Table")
 dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table")
-dbutils.widgets.text("elapsed_time", "", "Elapsed Time (seconds)")
-dbutils.widgets.text("confirmation", "", "Confirmation")
+dbutils.widgets.label("elapsed_time", "0", "Elapsed Time (seconds)")
 
 # Function to get all widget values
 def get_widget_values():
@@ -22,15 +21,8 @@ def get_widget_values():
         "source_table": dbutils.widgets.get("source_table"),
         "target_table": dbutils.widgets.get("target_table"),
         "truncate": dbutils.widgets.get("truncate"),
-        "elapsed_time": dbutils.widgets.get("elapsed_time"),
-        "confirmation": dbutils.widgets.get("confirmation")
+        "elapsed_time": dbutils.widgets.get("elapsed_time")
     }
-
-# Function to update confirmation widget
-def update_confirmation(confirmation):
-    dbutils.widgets.text("confirmation", confirmation)
-    print(f"Confirmation updated to: {confirmation}")  # Debug print
-    return confirmation
 
 # HTML template
 html_template = """
@@ -41,16 +33,7 @@ html_template = """
     <b>Truncate:</b> <span id="truncate"></span><br>
     <b>Elapsed Time:</b> <span id="elapsedTime"></span> seconds
     <br><br>
-    <div id="confirmationDiv" style="display:none;">
-        <p style="color: red;">Warning: You've chosen to truncate the target table. This will delete all existing data in the table.</p>
-        <p>Are you sure you want to proceed?</p>
-        <button onclick="confirmTruncate(true)">Yes, proceed with truncation</button>
-        <button onclick="confirmTruncate(false)">No, cancel operation</button>
-    </div>
-    <div id="startButtonDiv">
-        <button onclick="startIngestion()">Start Ingestion</button>
-    </div>
-    <div id="debugInfo"></div>
+    <button onclick="startIngestion()">Start Ingestion</button>
 </div>
 
 <script>
@@ -62,49 +45,17 @@ function updateUI() {{
     document.getElementById('targetTable').textContent = widgetValues.target_table;
     document.getElementById('truncate').textContent = widgetValues.truncate;
     document.getElementById('elapsedTime').textContent = widgetValues.elapsed_time;
-    document.getElementById('debugInfo').textContent = 'Confirmation: ' + widgetValues.confirmation;
 }}
 
 function startIngestion() {{
-    if (widgetValues.truncate === "yes") {{
-        document.getElementById("confirmationDiv").style.display = "block";
-        document.getElementById("startButtonDiv").style.display = "none";
-    }} else {{
-        confirmTruncate(true);
-    }}
-}}
-
-function confirmTruncate(confirmed) {{
-    var confirmationValue = confirmed ? "confirmed" : "cancelled";
-    document.getElementById('debugInfo').textContent = 'Sending confirmation: ' + confirmationValue;
     fetch('/api/2.0/workspace/runner/run', {{
         method: 'POST',
         headers: {{ 'Content-Type': 'application/json' }},
         body: JSON.stringify({{
-            commandString: `print(update_confirmation("${{confirmationValue}}"))`,
+            commandString: 'dbutils.notebook.run("ingestion", 0)',
             language: 'python',
             clusterId: clusterId
         }})
-    }})
-    .then(response => response.json())
-    .then(data => {{
-        if (data.results && data.results.resultType === 'text') {{
-            widgetValues.confirmation = data.results.data.trim();
-            document.getElementById('debugInfo').textContent = 'Confirmation set to: ' + widgetValues.confirmation;
-            if (confirmed) {{
-                document.getElementById("confirmationDiv").style.display = "none";
-                document.getElementById("startButtonDiv").style.display = "none";
-            }} else {{
-                document.getElementById("confirmationDiv").style.display = "none";
-                document.getElementById("startButtonDiv").style.display = "block";
-            }}
-            updateUI();
-        }} else {{
-            document.getElementById('debugInfo').textContent = 'Error: ' + JSON.stringify(data);
-        }}
-    }})
-    .catch(error => {{
-        document.getElementById('debugInfo').textContent = 'Fetch error: ' + error;
     }});
 }}
 
@@ -145,7 +96,7 @@ def update_timer(stop_event):
     start_time = time.time()
     while not stop_event.is_set():
         elapsed_time = int(time.time() - start_time)
-        dbutils.widgets.text("elapsed_time", str(elapsed_time))
+        dbutils.widgets.label("elapsed_time", str(elapsed_time))
         time.sleep(1)
 
 def ingest_data(source_table, target_table, truncate='no'):
@@ -194,21 +145,14 @@ def ingest_data(source_table, target_table, truncate='no'):
         timer_thread.join()
 
 # Main execution
-print("Waiting for user confirmation...")  # Debug print
-while dbutils.widgets.get("confirmation") != "confirmed":
-    time.sleep(1)  # Wait for user confirmation
-print("Confirmation received. Starting ingestion...")  # Debug print
+source_table = dbutils.widgets.get("source_table")
+target_table = dbutils.widgets.get("target_table")
+truncate = dbutils.widgets.get("truncate")
 
-try:
-    # Get values from widgets
-    source_table = dbutils.widgets.get("source_table")
-    target_table = dbutils.widgets.get("target_table")
-    truncate = dbutils.widgets.get("truncate")
-
-    # Validate inputs
-    if not all([source_table, target_table]):
-        raise ValueError("Both Source Table and Target Table fields must be filled.")
-
+# Validate inputs
+if not all([source_table, target_table]):
+    print("Error: Both Source Table and Target Table fields must be filled.")
+else:
     # Execute the ingestion function
     success, message = ingest_data(source_table, target_table, truncate)
     
@@ -218,11 +162,6 @@ try:
     else:
         print("Ingestion process failed.")
         print(message)
-except Exception as e:
-    logger.error("Ingestion process failed", exc_info=True)
-    print(f"Error: {str(e)}")
-finally:
-    # Clear the elapsed time and confirmation after completion
-    dbutils.widgets.remove("elapsed_time")
-    dbutils.widgets.remove("confirmation")
-    print("Ingestion process finished. Widgets cleared.")  # Debug print
+
+# Clear the elapsed time after completion
+dbutils.widgets.remove("elapsed_time")
