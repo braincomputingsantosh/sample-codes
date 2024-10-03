@@ -1,49 +1,110 @@
-This code block is addressing a schema mismatch issue with the source_metadata column. Here's a detailed explanation:
+Basics of Temp Tables in Databricks:
 
-Condition Check:
-
-It only executes if source_metadata exists in both the input DataFrame and the target table columns.
-
-
-Purpose:
-
-To align the schema of the source_metadata column in the input data with the expected schema in the target table.
+Temp tables in Databricks are similar to temporary tables in traditional relational databases.
+They are session-scoped, meaning they exist only for the duration of the Spark session.
+Created using the syntax: CREATE TEMPORARY VIEW view_name AS SELECT ...
 
 
-Operation:
+Types of Temporary Views:
 
-It uses withColumn to replace the existing source_metadata column with a new struct that matches the target schema.
-
-
-Struct Creation:
-
-It creates a new struct with all the fields from the original source_metadata.
-It adds a new field row_index set to None and cast as bigint.
+Session-scoped temporary views: Visible only within the current session.
+Global temporary views: Visible across all sessions in a Spark application, created with CREATE GLOBAL TEMPORARY VIEW.
 
 
-Field Details:
+Differences from Traditional RDBMS Temp Tables:
 
-Existing fields (like file_path, file_name, etc.) are preserved from the original source_metadata.
-The row_index field is added with a null value (represented by None in Python).
-
-
-Why This is Needed:
-
-This addresses the "DELTA_UPDATE_SCHEMA_MISMATCH_EXPRESSION" error you encountered earlier.
-The target table's source_metadata likely has an extra row_index field that doesn't exist in the incoming data.
+Storage: In-memory or disk-based depending on size and configuration.
+Indexing: No built-in indexing support.
+Query Optimization: Uses Catalyst Optimizer instead of traditional cost-based optimizers.
+Distribution: Can be distributed across a cluster.
 
 
-Effect:
+Use Cases:
 
-This operation ensures that the source_metadata in limited_df has the same structure as the target table, including the row_index field.
-It allows the merge operation to proceed without schema mismatch errors.
-
-
-Considerations:
-
-Adding row_index as null means this field will be empty in newly inserted rows.
-If row_index has significance in your data model, you might need to generate a meaningful value instead of null.
+Intermediate data processing steps in complex queries.
+Reusing result sets within a session.
+Simplifying complex ETL processes.
 
 
+Limitations:
 
-This schema alignment is crucial for successful upsert operations, especially when dealing with complex nested structures like the source_metadata column. It's a common pattern in data integration scenarios where source and target schemas might evolve independently over time.
+No support for explicit indexes.
+Cannot be used for long-term data storage.
+Limited by session/application lifecycle.
+
+
+Performance Considerations:
+
+Caching: Can be explicitly cached for faster access.
+Partitioning: Supports partitioning for large datasets.
+
+
+Advanced Topics:
+a. Delta Lake Integration:
+
+Temp views can be created from Delta tables.
+Can be used in conjunction with Delta Lake operations.
+
+b. Streaming with Temp Views:
+
+Can be used in Structured Streaming queries.
+Useful for transformations in streaming pipelines.
+
+c. Schema Evolution:
+
+Temp views reflect the current schema of the underlying data.
+Changes to source data schema are immediately reflected.
+
+d. Security and Access Control:
+
+Temp views inherit the security settings of the underlying data.
+Not shareable between different users' sessions.
+
+e. Upsert Operations:
+
+Can be used as intermediaries in complex upsert operations.
+Useful for staging data before merging into Delta tables.
+
+
+Best Practices:
+
+Use for intermediate computations, not for long-term storage.
+Consider caching for frequently accessed temp views.
+Drop temp views when no longer needed to free up resources.
+Be mindful of the session lifecycle when using temp views.
+
+
+Databricks-Specific Features:
+
+Integration with Databricks notebooks and jobs.
+Can be used seamlessly with various Databricks runtimes.
+
+
+Comparison with Permanent Tables:
+
+Temp tables are more ephemeral and suitable for transient operations.
+Permanent tables are better for persistent storage and cross-session data sharing.
+
+
+Advanced Use Case: Streaming Upserts
+
+Demonstrated using temp views as part of a streaming upsert pipeline.
+Showed how to handle schema mismatches and perform efficient merges.
+
+
+Performance Tuning:
+
+Discussed strategies for optimizing upsert operations using temp views.
+Covered topics like batch size control and schema alignment.
+
+
+Error Handling and Resilience:
+
+Explored techniques for making streaming jobs with temp views more robust.
+Implemented retry mechanisms and proper error logging.
+
+
+Monitoring and Observability:
+
+Discussed ways to log and monitor temp view usage in streaming jobs.
+Implemented timing mechanisms to track performance.
