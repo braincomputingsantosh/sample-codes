@@ -7,6 +7,11 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Create widgets for user input
+dbutils.widgets.text("source_table", "", "Source Table")
+dbutils.widgets.text("target_table", "", "Target Table")
+dbutils.widgets.text("merge_key", "", "Merge Key")
+
 def upsert_latest_month(source_table, target_table, merge_key):
     logger.info(f"Starting upsert process from {source_table} to {target_table}")
     
@@ -58,8 +63,97 @@ def upsert_latest_month(source_table, target_table, merge_key):
         logger.error(f"An error occurred during upsert: {str(e)}", exc_info=True)
         raise
 
-# Example usage
+# Main execution
 try:
-    upsert_latest_month("source_table_name", "target_table_name", "id")
+    # Get values from widgets
+    source_table = dbutils.widgets.get("source_table")
+    target_table = dbutils.widgets.get("target_table")
+    merge_key = dbutils.widgets.get("merge_key")
+
+    # Validate inputs
+    if not all([source_table, target_table, merge_key]):
+        raise ValueError("All fields (Source Table, Target Table, and Merge Key) must be filled.")
+
+    # Execute the upsert function
+    upsert_latest_month(source_table, target_table, merge_key)
+    
+    print("Upsert process completed successfully!")
 except Exception as e:
     logger.error("Upsert process failed", exc_info=True)
+    print(f"Error: {str(e)}")
+
+
+
+*************************************************************************************************************************
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import max, month, year, current_date
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Create widgets for user input
+dbutils.widgets.text("source_table", "", "Source Table")
+dbutils.widgets.text("target_table", "", "Target Table")
+dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table")
+
+def ingest_latest_month(source_table, target_table, truncate='no'):
+    logger.info(f"Starting ingestion process from {source_table} to {target_table}")
+    
+    try:
+        # Create SparkSession
+        spark = SparkSession.builder.appName("IngestLatestMonth").getOrCreate()
+        logger.info("SparkSession created successfully")
+
+        # Read source table
+        df = spark.table(source_table)
+        logger.info(f"Source table '{source_table}' read successfully")
+
+        # Get the latest month and year
+        latest_date = df.select(max("date")).collect()[0][0]
+        latest_month = month(latest_date)
+        latest_year = year(latest_date)
+        logger.info(f"Latest date in source table: {latest_date}")
+
+        # Filter data for the latest month
+        latest_data = df.filter((month(df.date) == latest_month) & (year(df.date) == latest_year))
+        logger.info(f"Data filtered for latest month: {latest_month}/{latest_year}")
+
+        # Write to target table
+        if truncate.lower() == 'yes':
+            logger.info(f"Overwriting target table '{target_table}'")
+            latest_data.write.mode("overwrite").saveAsTable(target_table)
+        else:
+            logger.info(f"Appending to target table '{target_table}'")
+            latest_data.write.mode("append").saveAsTable(target_table)
+
+        logger.info(f"Data ingestion complete. Latest month data from {source_table} has been written to {target_table}")
+        
+        # Log some statistics
+        row_count = latest_data.count()
+        logger.info(f"Number of rows ingested: {row_count}")
+
+    except Exception as e:
+        logger.error(f"An error occurred during ingestion: {str(e)}", exc_info=True)
+        raise
+
+# Main execution
+try:
+    # Get values from widgets
+    source_table = dbutils.widgets.get("source_table")
+    target_table = dbutils.widgets.get("target_table")
+    truncate = dbutils.widgets.get("truncate")
+
+    # Validate inputs
+    if not all([source_table, target_table]):
+        raise ValueError("Both Source Table and Target Table fields must be filled.")
+
+    # Execute the ingestion function
+    ingest_latest_month(source_table, target_table, truncate)
+    
+    print("Ingestion process completed successfully!")
+except Exception as e:
+    logger.error("Ingestion process failed", exc_info=True)
+    print(f"Error: {str(e)}")
