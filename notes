@@ -1,67 +1,49 @@
-def upsert_to_silver(microBatchOutputDF: DataFrame, batchId: int):
-    try:
-        limited_df = microBatchOutputDF.limit(1000)
-        
-        log_message(f"Starting to process batch {batchId}")
-        log_message(f"Batch {batchId} schema: {limited_df.schema}")
-        log_message(f"Batch {batchId} count: {limited_df.count()}")
-        
-        delta_table = DeltaTable.forName(spark, target_table)
-        target_schema = delta_table.toDF().schema
-        
-        log_message(f"Target table schema: {target_schema}")
-        
-        if not check_schema_compatibility(microBatchOutputDF.schema, target_schema):
-            raise ValueError("Schema incompatibility detected")
-        
-        exclude_columns = ["dms_extract_time", "file_id"]
-        target_columns = spark.table(target_table).columns
-        
-        update_columns = {col: f"source.{col}" for col in target_columns 
-                          if col not in exclude_columns and col != 'loan_id' and col in microBatchOutputDF.columns}
-        
-        insert_columns = {col: f"source.{col}" for col in target_columns 
-                          if col not in exclude_columns and col in microBatchOutputDF.columns}
-        
-        # Only add timestamp columns if they exist in target table
-        if 'last_updated' in target_columns:
-            update_columns['last_updated'] = "current_timestamp()"
-            insert_columns['last_updated'] = "current_timestamp()"
-        
-        if 'created_at' in target_columns:
-            insert_columns['created_at'] = "current_timestamp()"
-        
-        log_message(f"Batch {batchId} update columns: {update_columns}")
-        log_message(f"Batch {batchId} insert columns: {insert_columns}")
-        
-        # Align the source_metadata schema with the target
-        if 'source_metadata' in microBatchOutputDF.columns and 'source_metadata' in target_columns:
-            from pyspark.sql.functions import col, struct, lit
-            
-            limited_df = limited_df.withColumn(
-                "source_metadata",
-                struct(
-                    col("source_metadata.file_path"),
-                    col("source_metadata.file_name"),
-                    col("source_metadata.file_size"),
-                    col("source_metadata.file_block_start"),
-                    col("source_metadata.file_block_length"),
-                    col("source_metadata.file_modification_time"),
-                    lit(None).cast("bigint").alias("row_index")
-                )
-            )
-        
-        def merge_operation():
-            (delta_table.alias("target")
-             .merge(limited_df.alias("source"), merge_condition)
-             .whenMatchedUpdate(set=update_columns)
-             .whenNotMatchedInsert(values=insert_columns)
-             .execute())
-        
-        retry_operation(merge_operation)
-        
-        log_message(f"Batch {batchId} completed successfully")
-    except Exception as e:
-        log_message(f"Error in batch {batchId}: {str(e)}")
-        log_message(f"Error traceback: {sys.exc_info()[2]}")
-        raise
+This code block is addressing a schema mismatch issue with the source_metadata column. Here's a detailed explanation:
+
+Condition Check:
+
+It only executes if source_metadata exists in both the input DataFrame and the target table columns.
+
+
+Purpose:
+
+To align the schema of the source_metadata column in the input data with the expected schema in the target table.
+
+
+Operation:
+
+It uses withColumn to replace the existing source_metadata column with a new struct that matches the target schema.
+
+
+Struct Creation:
+
+It creates a new struct with all the fields from the original source_metadata.
+It adds a new field row_index set to None and cast as bigint.
+
+
+Field Details:
+
+Existing fields (like file_path, file_name, etc.) are preserved from the original source_metadata.
+The row_index field is added with a null value (represented by None in Python).
+
+
+Why This is Needed:
+
+This addresses the "DELTA_UPDATE_SCHEMA_MISMATCH_EXPRESSION" error you encountered earlier.
+The target table's source_metadata likely has an extra row_index field that doesn't exist in the incoming data.
+
+
+Effect:
+
+This operation ensures that the source_metadata in limited_df has the same structure as the target table, including the row_index field.
+It allows the merge operation to proceed without schema mismatch errors.
+
+
+Considerations:
+
+Adding row_index as null means this field will be empty in newly inserted rows.
+If row_index has significance in your data model, you might need to generate a meaningful value instead of null.
+
+
+
+This schema alignment is crucial for successful upsert operations, especially when dealing with complex nested structures like the source_metadata column. It's a common pattern in data integration scenarios where source and target schemas might evolve independently over time.
