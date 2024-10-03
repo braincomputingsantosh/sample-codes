@@ -29,6 +29,7 @@ def get_widget_values():
 # Function to update confirmation widget
 def update_confirmation(confirmation):
     dbutils.widgets.text("confirmation", confirmation)
+    print(f"Confirmation updated to: {confirmation}")  # Debug print
     return confirmation
 
 # HTML template
@@ -49,6 +50,7 @@ html_template = """
     <div id="startButtonDiv">
         <button onclick="startIngestion()">Start Ingestion</button>
     </div>
+    <div id="debugInfo"></div>
 </div>
 
 <script>
@@ -60,6 +62,7 @@ function updateUI() {{
     document.getElementById('targetTable').textContent = widgetValues.target_table;
     document.getElementById('truncate').textContent = widgetValues.truncate;
     document.getElementById('elapsedTime').textContent = widgetValues.elapsed_time;
+    document.getElementById('debugInfo').textContent = 'Confirmation: ' + widgetValues.confirmation;
 }}
 
 function startIngestion() {{
@@ -73,6 +76,7 @@ function startIngestion() {{
 
 function confirmTruncate(confirmed) {{
     var confirmationValue = confirmed ? "confirmed" : "cancelled";
+    document.getElementById('debugInfo').textContent = 'Sending confirmation: ' + confirmationValue;
     fetch('/api/2.0/workspace/runner/run', {{
         method: 'POST',
         headers: {{ 'Content-Type': 'application/json' }},
@@ -86,6 +90,7 @@ function confirmTruncate(confirmed) {{
     .then(data => {{
         if (data.results && data.results.resultType === 'text') {{
             widgetValues.confirmation = data.results.data.trim();
+            document.getElementById('debugInfo').textContent = 'Confirmation set to: ' + widgetValues.confirmation;
             if (confirmed) {{
                 document.getElementById("confirmationDiv").style.display = "none";
                 document.getElementById("startButtonDiv").style.display = "none";
@@ -93,7 +98,13 @@ function confirmTruncate(confirmed) {{
                 document.getElementById("confirmationDiv").style.display = "none";
                 document.getElementById("startButtonDiv").style.display = "block";
             }}
+            updateUI();
+        }} else {{
+            document.getElementById('debugInfo').textContent = 'Error: ' + JSON.stringify(data);
         }}
+    }})
+    .catch(error => {{
+        document.getElementById('debugInfo').textContent = 'Fetch error: ' + error;
     }});
 }}
 
@@ -183,8 +194,10 @@ def ingest_data(source_table, target_table, truncate='no'):
         timer_thread.join()
 
 # Main execution
+print("Waiting for user confirmation...")  # Debug print
 while dbutils.widgets.get("confirmation") != "confirmed":
     time.sleep(1)  # Wait for user confirmation
+print("Confirmation received. Starting ingestion...")  # Debug print
 
 try:
     # Get values from widgets
@@ -212,3 +225,4 @@ finally:
     # Clear the elapsed time and confirmation after completion
     dbutils.widgets.remove("elapsed_time")
     dbutils.widgets.remove("confirmation")
+    print("Ingestion process finished. Widgets cleared.")  # Debug print
