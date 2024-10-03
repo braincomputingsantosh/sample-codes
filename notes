@@ -1,28 +1,53 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import max, month, year, current_date
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 def ingest_latest_month(source_table, target_table, truncate='no'):
-    # Create SparkSession
-    spark = SparkSession.builder.appName("IngestLatestMonth").getOrCreate()
+    logger.info(f"Starting ingestion process from {source_table} to {target_table}")
+    
+    try:
+        # Create SparkSession
+        spark = SparkSession.builder.appName("IngestLatestMonth").getOrCreate()
+        logger.info("SparkSession created successfully")
 
-    # Read source table
-    df = spark.table(source_table)
+        # Read source table
+        df = spark.table(source_table)
+        logger.info(f"Source table '{source_table}' read successfully")
 
-    # Get the latest month and year
-    latest_date = df.select(max("date")).collect()[0][0]
-    latest_month = month(latest_date)
-    latest_year = year(latest_date)
+        # Get the latest month and year
+        latest_date = df.select(max("date")).collect()[0][0]
+        latest_month = month(latest_date)
+        latest_year = year(latest_date)
+        logger.info(f"Latest date in source table: {latest_date}")
 
-    # Filter data for the latest month
-    latest_data = df.filter((month(df.date) == latest_month) & (year(df.date) == latest_year))
+        # Filter data for the latest month
+        latest_data = df.filter((month(df.date) == latest_month) & (year(df.date) == latest_year))
+        logger.info(f"Data filtered for latest month: {latest_month}/{latest_year}")
 
-    # Write to target table
-    if truncate.lower() == 'yes':
-        latest_data.write.mode("overwrite").saveAsTable(target_table)
-    else:
-        latest_data.write.mode("append").saveAsTable(target_table)
+        # Write to target table
+        if truncate.lower() == 'yes':
+            logger.info(f"Overwriting target table '{target_table}'")
+            latest_data.write.mode("overwrite").saveAsTable(target_table)
+        else:
+            logger.info(f"Appending to target table '{target_table}'")
+            latest_data.write.mode("append").saveAsTable(target_table)
 
-    print(f"Data ingestion complete. Latest month data from {source_table} has been written to {target_table}.")
+        logger.info(f"Data ingestion complete. Latest month data from {source_table} has been written to {target_table}")
+        
+        # Log some statistics
+        row_count = latest_data.count()
+        logger.info(f"Number of rows ingested: {row_count}")
+
+    except Exception as e:
+        logger.error(f"An error occurred during ingestion: {str(e)}", exc_info=True)
+        raise
 
 # Example usage
-ingest_latest_month("source_table_name", "target_table_name", "no")
+try:
+    ingest_latest_month("source_table_name", "target_table_name", "no")
+except Exception as e:
+    logger.error("Ingestion process failed", exc_info=True)
