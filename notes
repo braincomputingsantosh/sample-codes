@@ -26,6 +26,11 @@ def get_widget_values():
         "confirmation": dbutils.widgets.get("confirmation")
     }
 
+# Function to update confirmation widget
+def update_confirmation(confirmation):
+    dbutils.widgets.text("confirmation", confirmation)
+    return confirmation
+
 # HTML template
 html_template = """
 <div id="ingestionUI">
@@ -48,6 +53,7 @@ html_template = """
 
 <script>
 var widgetValues = {widget_values};
+var clusterId = "{cluster_id}";
 
 function updateUI() {{
     document.getElementById('sourceTable').textContent = widgetValues.source_table;
@@ -75,8 +81,16 @@ function confirmTruncate(confirmed) {{
         document.getElementById("startButtonDiv").style.display = "block";
         widgetValues.confirmation = "cancelled";
     }}
-    // Use Databricks-specific method to update widget
-    dbutils.widgets.text("confirmation", widgetValues.confirmation);
+    // Use Databricks API to update widget
+    fetch('/api/2.0/workspace/runner/run', {{
+        method: 'POST',
+        headers: {{ 'Content-Type': 'application/json' }},
+        body: JSON.stringify({{
+            commandString: f'print(update_confirmation("{widgetValues.confirmation}"))',
+            language: 'python',
+            clusterId: clusterId
+        }})
+    }});
 }}
 
 updateUI();
@@ -107,6 +121,9 @@ setInterval(function() {{
 clusterId = spark.conf.get("spark.databricks.clusterUsageTags.clusterId")
 
 # Display the HTML
-displayHTML(html_template.format(widget_values=json.dumps(get_widget_values())))
+displayHTML(html_template.format(
+    widget_values=json.dumps(get_widget_values()),
+    cluster_id=clusterId
+))
 
 # ... (rest of the Python code remains the same)
