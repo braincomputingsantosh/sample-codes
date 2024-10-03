@@ -1,93 +1,4 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import max, month, year, current_date, col
-from delta.tables import DeltaTable
-import logging
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Create widgets for user input
-dbutils.widgets.text("source_table", "", "Source Table")
-dbutils.widgets.text("target_table", "", "Target Table")
-dbutils.widgets.text("merge_key", "", "Merge Key")
-
-def upsert_latest_month(source_table, target_table, merge_key):
-    logger.info(f"Starting upsert process from {source_table} to {target_table}")
-    
-    try:
-        # Create SparkSession
-        spark = SparkSession.builder \
-            .appName("UpsertLatestMonth") \
-            .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension") \
-            .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog") \
-            .getOrCreate()
-        logger.info("SparkSession created successfully")
-
-        # Read source table
-        source_df = spark.table(source_table)
-        logger.info(f"Source table '{source_table}' read successfully")
-
-        # Get the latest month and year
-        latest_date = source_df.select(max("date")).collect()[0][0]
-        latest_month = month(latest_date)
-        latest_year = year(latest_date)
-        logger.info(f"Latest date in source table: {latest_date}")
-
-        # Filter data for the latest month
-        latest_data = source_df.filter((month(col("date")) == latest_month) & (year(col("date")) == latest_year))
-        logger.info(f"Data filtered for latest month: {latest_month}/{latest_year}")
-
-        # Check if target table exists
-        if spark.catalog.tableExists(target_table):
-            # Perform upsert
-            target = DeltaTable.forName(spark, target_table)
-            
-            (target.alias("target")
-             .merge(latest_data.alias("source"), f"target.{merge_key} = source.{merge_key}")
-             .whenMatchedUpdateAll()
-             .whenNotMatchedInsertAll()
-             .execute())
-            
-            logger.info(f"Upsert operation completed on target table '{target_table}'")
-        else:
-            # If target doesn't exist, create it
-            latest_data.write.format("delta").saveAsTable(target_table)
-            logger.info(f"Target table '{target_table}' created with latest data")
-
-        # Log some statistics
-        row_count = latest_data.count()
-        logger.info(f"Number of rows processed: {row_count}")
-
-    except Exception as e:
-        logger.error(f"An error occurred during upsert: {str(e)}", exc_info=True)
-        raise
-
-# Main execution
-try:
-    # Get values from widgets
-    source_table = dbutils.widgets.get("source_table")
-    target_table = dbutils.widgets.get("target_table")
-    merge_key = dbutils.widgets.get("merge_key")
-
-    # Validate inputs
-    if not all([source_table, target_table, merge_key]):
-        raise ValueError("All fields (Source Table, Target Table, and Merge Key) must be filled.")
-
-    # Execute the upsert function
-    upsert_latest_month(source_table, target_table, merge_key)
-    
-    print("Upsert process completed successfully!")
-except Exception as e:
-    logger.error("Upsert process failed", exc_info=True)
-    print(f"Error: {str(e)}")
-
-
-
-*************************************************************************************************************************
-
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import max, month, year, current_date
 import logging
 
 # Configure logging
@@ -99,40 +10,30 @@ dbutils.widgets.text("source_table", "", "Source Table")
 dbutils.widgets.text("target_table", "", "Target Table")
 dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table")
 
-def ingest_latest_month(source_table, target_table, truncate='no'):
+def ingest_data(source_table, target_table, truncate='no'):
     logger.info(f"Starting ingestion process from {source_table} to {target_table}")
     
     try:
         # Create SparkSession
-        spark = SparkSession.builder.appName("IngestLatestMonth").getOrCreate()
+        spark = SparkSession.builder.appName("IngestData").getOrCreate()
         logger.info("SparkSession created successfully")
 
         # Read source table
         df = spark.table(source_table)
         logger.info(f"Source table '{source_table}' read successfully")
 
-        # Get the latest month and year
-        latest_date = df.select(max("date")).collect()[0][0]
-        latest_month = month(latest_date)
-        latest_year = year(latest_date)
-        logger.info(f"Latest date in source table: {latest_date}")
-
-        # Filter data for the latest month
-        latest_data = df.filter((month(df.date) == latest_month) & (year(df.date) == latest_year))
-        logger.info(f"Data filtered for latest month: {latest_month}/{latest_year}")
-
         # Write to target table
         if truncate.lower() == 'yes':
             logger.info(f"Overwriting target table '{target_table}'")
-            latest_data.write.mode("overwrite").saveAsTable(target_table)
+            df.write.mode("overwrite").saveAsTable(target_table)
         else:
             logger.info(f"Appending to target table '{target_table}'")
-            latest_data.write.mode("append").saveAsTable(target_table)
+            df.write.mode("append").saveAsTable(target_table)
 
-        logger.info(f"Data ingestion complete. Latest month data from {source_table} has been written to {target_table}")
+        logger.info(f"Data ingestion complete. Data from {source_table} has been written to {target_table}")
         
         # Log some statistics
-        row_count = latest_data.count()
+        row_count = df.count()
         logger.info(f"Number of rows ingested: {row_count}")
 
     except Exception as e:
@@ -151,7 +52,7 @@ try:
         raise ValueError("Both Source Table and Target Table fields must be filled.")
 
     # Execute the ingestion function
-    ingest_latest_month(source_table, target_table, truncate)
+    ingest_data(source_table, target_table, truncate)
     
     print("Ingestion process completed successfully!")
 except Exception as e:
