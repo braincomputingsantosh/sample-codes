@@ -2,6 +2,7 @@ from pyspark.sql import SparkSession
 import logging
 import time
 import threading
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -15,48 +16,86 @@ dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table
 dbutils.widgets.text("elapsed_time", "", "Elapsed Time (seconds)")
 dbutils.widgets.text("confirmation", "", "Confirmation")
 
-html = """
-<h3>Ingestion Process</h3>
-<b>Source Table:</b> {{getArgument("source_table")}}<br>
-<b>Target Table:</b> {{getArgument("target_table")}}<br>
-<b>Truncate:</b> {{getArgument("truncate")}}<br>
-<b>Elapsed Time:</b> {{getArgument("elapsed_time")}} seconds
-<br><br>
-<div id="confirmationDiv" style="display:none;">
-  <p style="color: red;">Warning: You've chosen to truncate the target table. This will delete all existing data in the table.</p>
-  <p>Are you sure you want to proceed?</p>
-  <button onclick="confirmTruncate(true)">Yes, proceed with truncation</button>
-  <button onclick="confirmTruncate(false)">No, cancel operation</button>
-</div>
-<div id="startButtonDiv">
-  <button onclick="startIngestion()">Start Ingestion</button>
+# Function to get all widget values
+def get_widget_values():
+    return {
+        "source_table": dbutils.widgets.get("source_table"),
+        "target_table": dbutils.widgets.get("target_table"),
+        "truncate": dbutils.widgets.get("truncate"),
+        "elapsed_time": dbutils.widgets.get("elapsed_time"),
+        "confirmation": dbutils.widgets.get("confirmation")
+    }
+
+# HTML template
+html_template = """
+<div id="ingestionUI">
+    <h3>Ingestion Process</h3>
+    <b>Source Table:</b> <span id="sourceTable"></span><br>
+    <b>Target Table:</b> <span id="targetTable"></span><br>
+    <b>Truncate:</b> <span id="truncate"></span><br>
+    <b>Elapsed Time:</b> <span id="elapsedTime"></span> seconds
+    <br><br>
+    <div id="confirmationDiv" style="display:none;">
+        <p style="color: red;">Warning: You've chosen to truncate the target table. This will delete all existing data in the table.</p>
+        <p>Are you sure you want to proceed?</p>
+        <button onclick="confirmTruncate(true)">Yes, proceed with truncation</button>
+        <button onclick="confirmTruncate(false)">No, cancel operation</button>
+    </div>
+    <div id="startButtonDiv">
+        <button onclick="startIngestion()">Start Ingestion</button>
+    </div>
 </div>
 
 <script>
+var widgetValues = {widget_values};
+
+function updateUI() {
+    document.getElementById('sourceTable').textContent = widgetValues.source_table;
+    document.getElementById('targetTable').textContent = widgetValues.target_table;
+    document.getElementById('truncate').textContent = widgetValues.truncate;
+    document.getElementById('elapsedTime').textContent = widgetValues.elapsed_time;
+}
+
 function startIngestion() {
-  var truncate = getArgument("truncate");
-  if (truncate === "yes") {
-    document.getElementById("confirmationDiv").style.display = "block";
-    document.getElementById("startButtonDiv").style.display = "none";
-  } else {
-    confirmTruncate(true);
-  }
+    if (widgetValues.truncate === "yes") {
+        document.getElementById("confirmationDiv").style.display = "block";
+        document.getElementById("startButtonDiv").style.display = "none";
+    } else {
+        confirmTruncate(true);
+    }
 }
 
 function confirmTruncate(confirmed) {
-  if (confirmed) {
-    document.getElementById("confirmationDiv").style.display = "none";
-    document.getElementById("startButtonDiv").style.display = "none";
-    setArgument("confirmation", "confirmed");
-  } else {
-    document.getElementById("confirmationDiv").style.display = "none";
-    document.getElementById("startButtonDiv").style.display = "block";
-    setArgument("confirmation", "cancelled");
-  }
+    if (confirmed) {
+        document.getElementById("confirmationDiv").style.display = "none";
+        document.getElementById("startButtonDiv").style.display = "none";
+        widgetValues.confirmation = "confirmed";
+    } else {
+        document.getElementById("confirmationDiv").style.display = "none";
+        document.getElementById("startButtonDiv").style.display = "block";
+        widgetValues.confirmation = "cancelled";
+    }
+    IPython.notebook.kernel.execute(`dbutils.widgets.text("confirmation", "${widgetValues.confirmation}")`);
 }
+
+updateUI();
+
+// Set up interval to update UI every second
+setInterval(function() {
+    IPython.notebook.kernel.execute('print(json.dumps(get_widget_values()))', {
+        iopub: {
+            output: function(msg) {
+                widgetValues = JSON.parse(msg.content.text);
+                updateUI();
+            }
+        }
+    });
+}, 1000);
 </script>
 """
-displayHTML(html)
+
+# Display the HTML
+displayHTML(html_template.replace("{widget_values}", json.dumps(get_widget_values())))
 
 def update_timer(stop_event):
     start_time = time.time()
