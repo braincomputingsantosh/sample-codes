@@ -13,7 +13,7 @@ dbutils.widgets.removeAll()
 dbutils.widgets.text("source_table", "", "Source Table")
 dbutils.widgets.text("target_table", "", "Target Table")
 dbutils.widgets.dropdown("truncate", "no", ["yes", "no"], "Truncate Target Table")
-dbutils.widgets.label("elapsed_time", "0", "Elapsed Time (seconds)")
+dbutils.widgets.text("elapsed_time", "0", "Elapsed Time (seconds)")
 
 # Function to get all widget values
 def get_widget_values():
@@ -45,6 +45,13 @@ function updateUI() {{
     document.getElementById('targetTable').textContent = widgetValues.target_table;
     document.getElementById('truncate').textContent = widgetValues.truncate;
     document.getElementById('elapsedTime').textContent = widgetValues.elapsed_time;
+    
+    // Make elapsed time input read-only
+    var elapsedTimeInput = document.querySelector('input[title="Elapsed Time (seconds)"]');
+    if (elapsedTimeInput) {{
+        elapsedTimeInput.readOnly = true;
+        elapsedTimeInput.style.backgroundColor = "#f0f0f0";
+    }}
 }}
 
 function startIngestion() {{
@@ -96,7 +103,7 @@ def update_timer(stop_event):
     start_time = time.time()
     while not stop_event.is_set():
         elapsed_time = int(time.time() - start_time)
-        dbutils.widgets.label("elapsed_time", str(elapsed_time))
+        dbutils.widgets.text("elapsed_time", str(elapsed_time))
         time.sleep(1)
 
 def ingest_data(source_table, target_table, truncate='no'):
