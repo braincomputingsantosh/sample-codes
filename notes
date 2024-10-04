@@ -9,10 +9,10 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # Create widgets for user input
-dbutils.widgets.removeAll()
 dbutils.widgets.text("source_table", "", "Source Table")
 dbutils.widgets.text("target_table", "", "Target Table")
 dbutils.widgets.text("where_clause", "", "WHERE Clause (optional)")
+dbutils.widgets.text("partition_columns", "", "Partition Columns (comma-separated)")
 dbutils.widgets.text("elapsed_time", "0", "Elapsed Time (seconds)")
 
 def update_timer(stop_event):
@@ -22,10 +22,12 @@ def update_timer(stop_event):
         dbutils.widgets.text("elapsed_time", str(elapsed_time))
         time.sleep(1)
 
-def append_data(source_table, target_table, where_clause):
+def append_data(source_table, target_table, where_clause, partition_columns):
     logger.info(f"Starting append process from {source_table} to {target_table}")
     if where_clause:
         logger.info(f"Applying WHERE clause: {where_clause}")
+    if partition_columns:
+        logger.info(f"Using partition columns: {partition_columns}")
     
     start_time = time.time()
     
@@ -47,8 +49,13 @@ def append_data(source_table, target_table, where_clause):
             df = df.filter(expr(where_clause))
             logger.info("WHERE clause applied")
 
-        # Append to target table
-        df.write.mode("append").saveAsTable(target_table)
+        # Append to target table with partitioning
+        write_options = {}
+        if partition_columns:
+            partition_cols = [col.strip() for col in partition_columns.split(",")]
+            write_options["partitionBy"] = partition_cols
+
+        df.write.mode("append").options(**write_options).saveAsTable(target_table)
         logger.info(f"Data appended to target table '{target_table}'")
 
         # Log some statistics
@@ -75,13 +82,14 @@ def append_data(source_table, target_table, where_clause):
 source_table = dbutils.widgets.get("source_table")
 target_table = dbutils.widgets.get("target_table")
 where_clause = dbutils.widgets.get("where_clause")
+partition_columns = dbutils.widgets.get("partition_columns")
 
 # Validate inputs
 if not all([source_table, target_table]):
     print("Error: Both Source Table and Target Table fields must be filled.")
 else:
     # Execute the append function
-    success, message = append_data(source_table, target_table, where_clause)
+    success, message = append_data(source_table, target_table, where_clause, partition_columns)
     
     if success:
         print("Append process completed successfully!")
@@ -92,3 +100,6 @@ else:
 
 # Clear the elapsed time after completion
 dbutils.widgets.remove("elapsed_time")
+
+# Return the result message
+dbutils.notebook.exit(message)
