@@ -21,12 +21,20 @@ def process_batch(batch):
         results.append(result)
     return results
 
+# Take all rows at once, but process in batches
+all_rows = df_group.take(total_count)
+
 with ThreadPoolExecutor(max_workers=10) as executor:
+    futures = []
     for i in range(num_batches):
-        offset = i * batch_size
-        batch = df_group.orderBy(F.col("some_column")).offset(offset).limit(batch_size).collect()
+        start_idx = i * batch_size
+        end_idx = min((i + 1) * batch_size, total_count)
+        batch = all_rows[start_idx:end_idx]
         
         future = executor.submit(process_batch, batch)
+        futures.append(future)
+
+    for i, future in enumerate(futures):
         batch_results = future.result()
         
         # Process batch_results and update your result dictionaries
@@ -36,8 +44,8 @@ with ThreadPoolExecutor(max_workers=10) as executor:
 
         print(f"Processed batch {i+1}/{num_batches}")
 
-    print(f"Results: {d_results}")
-    print(f"Failures: {d_results_fail}")
+print(f"Results: {d_results}")
+print(f"Failures: {d_results_fail}")
 
 finish = perf_counter()
 print(f"It took {(finish-start)} second(s) to finish.")
