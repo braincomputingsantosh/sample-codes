@@ -2,6 +2,13 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 
+# Create input widgets
+dbutils.widgets.text("source_schema", "bk_mpo_raw", "Source Schema")
+dbutils.widgets.text("source_table", "loan_month_loss_mit", "Source Table")
+dbutils.widgets.text("target_schema", "test_bk_mpo", "Target Schema")
+dbutils.widgets.text("target_table", "loan_month_loss_mit", "Target Table")
+dbutils.widgets.text("num_rows", "2000", "Number of Rows")
+
 def migrate_data(source_schema, source_table, target_schema, target_table, num_rows):
     # Create SparkSession
     spark = SparkSession.builder.appName("DataMigration").getOrCreate()
@@ -23,7 +30,7 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
 
     print(f"Successfully migrated {num_rows} rows from {source_schema}.{source_table} to {target_schema}.{target_table}")
 
-# Set your parameters
+# Get parameters from widgets
 source_schema = dbutils.widgets.get("source_schema")
 source_table = dbutils.widgets.get("source_table")
 target_schema = dbutils.widgets.get("target_schema")
