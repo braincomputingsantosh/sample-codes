@@ -8,8 +8,9 @@ dbutils.widgets.text("source_table", "loan_month_loss_mit", "Source Table")
 dbutils.widgets.text("target_schema", "test_bk_mpo", "Target Schema")
 dbutils.widgets.text("target_table", "loan_month_loss_mit", "Target Table")
 dbutils.widgets.text("num_rows", "2000", "Number of Rows")
+dbutils.widgets.text("where_clause", "", "WHERE Clause (Optional)")
 
-def migrate_data(source_schema, source_table, target_schema, target_table, num_rows):
+def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause):
     # Create SparkSession
     spark = SparkSession.builder.appName("DataMigration").getOrCreate()
 
@@ -18,6 +19,10 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
 
     # Read the source table
     df = spark.table(f"{source_schema}.{source_table}")
+
+    # Apply WHERE clause if provided
+    if where_clause:
+        df = df.filter(where_clause)
 
     # Sample the specified number of rows
     sampled_df = df.limit(num_rows)
@@ -29,6 +34,8 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
     sampled_df.write.mode("overwrite").saveAsTable(f"{target_schema}.{target_table}")
 
     print(f"Successfully migrated {num_rows} rows from {source_schema}.{source_table} to {target_schema}.{target_table}")
+    if where_clause:
+        print(f"Applied WHERE clause: {where_clause}")
 
 # Get parameters from widgets
 source_schema = dbutils.widgets.get("source_schema")
@@ -36,6 +43,7 @@ source_table = dbutils.widgets.get("source_table")
 target_schema = dbutils.widgets.get("target_schema")
 target_table = dbutils.widgets.get("target_table")
 num_rows = int(dbutils.widgets.get("num_rows"))
+where_clause = dbutils.widgets.get("where_clause")
 
 # Call the function
-migrate_data(source_schema, source_table, target_schema, target_table, num_rows)
+migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause)
