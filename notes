@@ -1,51 +1,34 @@
-from pyspark.sql import functions as F
-from concurrent.futures import ThreadPoolExecutor
-import math
+# Import required libraries
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import *
 
-# Assuming df_group is your Spark DataFrame
-total_count = df_group.count()
-batch_size = 1000  # Adjust this based on your data size and available memory
-num_batches = math.ceil(total_count / batch_size)
+def migrate_data(source_schema, source_table, target_schema, target_table, num_rows):
+    # Create SparkSession
+    spark = SparkSession.builder.appName("DataMigration").getOrCreate()
 
-d_results = {}
-d_results_fail = {}
-d_results_fail_META_TYPE = {}
+    # Set the database
+    spark.sql(f"USE {source_schema}")
 
-start = perf_counter()
+    # Read the source table
+    df = spark.table(f"{source_schema}.{source_table}")
 
-def process_batch(batch):
-    results = []
-    for row in batch:
-        # Your existing column_process logic here
-        result = column_process(row)
-        results.append(result)
-    return results
+    # Sample the specified number of rows
+    sampled_df = df.limit(num_rows)
 
-# Take all rows at once, but process in batches
-all_rows = df_group.take(total_count)
+    # Create the target schema if it doesn't exist
+    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
 
-with ThreadPoolExecutor(max_workers=10) as executor:
-    futures = []
-    for i in range(num_batches):
-        start_idx = i * batch_size
-        end_idx = min((i + 1) * batch_size, total_count)
-        batch = all_rows[start_idx:end_idx]
-        
-        future = executor.submit(process_batch, batch)
-        futures.append(future)
+    # Create the target table with the same schema as the source table
+    sampled_df.write.mode("overwrite").saveAsTable(f"{target_schema}.{target_table}")
 
-    for i, future in enumerate(futures):
-        batch_results = future.result()
-        
-        # Process batch_results and update your result dictionaries
-        for result in batch_results:
-            # Update d_results, d_results_fail, d_results_fail_META_TYPE based on the result
-            pass
+    print(f"Successfully migrated {num_rows} rows from {source_schema}.{source_table} to {target_schema}.{target_table}")
 
-        print(f"Processed batch {i+1}/{num_batches}")
+# Set your parameters
+source_schema = dbutils.widgets.get("source_schema")
+source_table = dbutils.widgets.get("source_table")
+target_schema = dbutils.widgets.get("target_schema")
+target_table = dbutils.widgets.get("target_table")
+num_rows = int(dbutils.widgets.get("num_rows"))
 
-print(f"Results: {d_results}")
-print(f"Failures: {d_results_fail}")
-
-finish = perf_counter()
-print(f"It took {(finish-start)} second(s) to finish.")
+# Call the function
+migrate_data(source_schema, source_table, target_schema, target_table, num_rows)
