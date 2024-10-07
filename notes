@@ -24,16 +24,20 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
     # Execute the query
     df = spark.sql(query)
 
+    # Get the total count of rows in the source query
+    total_rows = df.count()
+
     # Apply row limit if specified
     if num_rows.lower() != 'all':
         try:
             limit = int(num_rows)
             df = df.limit(limit)
-            print(f"Migrating {limit} rows")
+            rows_to_migrate = min(limit, total_rows)
         except ValueError:
             print("Invalid number of rows specified. Migrating all rows.")
+            rows_to_migrate = total_rows
     else:
-        print("Migrating all rows")
+        rows_to_migrate = total_rows
 
     # Create the target schema if it doesn't exist
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
@@ -41,10 +45,21 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
     # Write data to the target table
     df.write.mode(write_mode).saveAsTable(f"{target_schema}.{target_table}")
 
-    print(f"Successfully migrated data from {source_schema}.{source_table} to {target_schema}.{target_table}")
-    print(f"Write mode: {write_mode}")
+    # Get the count of rows in the target table after migration
+    target_count = spark.table(f"{target_schema}.{target_table}").count()
+
+    # Print detailed information
+    print("\n--- Data Migration Summary ---")
+    print(f"Source: {source_schema}.{source_table}")
+    print(f"Target: {target_schema}.{target_table}")
+    print(f"Write Mode: {write_mode}")
+    print(f"Rows in Source Query: {total_rows}")
+    print(f"Rows Migrated: {rows_to_migrate}")
+    print(f"Rows in Target Table After Migration: {target_count}")
     if where_clause:
-        print(f"Applied WHERE clause: {where_clause}")
+        print(f"WHERE Clause Applied: {where_clause}")
+    print(f"Status: {'Completed' if rows_to_migrate > 0 else 'No rows migrated'}")
+    print("-----------------------------\n")
 
 # Get parameters from widgets
 source_schema = dbutils.widgets.get("source_schema")
