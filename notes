@@ -1,4 +1,3 @@
-# Import required libraries
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
 
@@ -11,7 +10,6 @@ dbutils.widgets.text("num_rows", "2000", "Number of Rows")
 dbutils.widgets.text("where_clause", "", "WHERE Clause (Optional)")
 
 def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause):
-    # Create SparkSession
     spark = SparkSession.builder.appName("DataMigration").getOrCreate()
 
     # Set the database
@@ -22,10 +20,17 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
 
     # Apply WHERE clause if provided
     if where_clause:
-        df = df.filter(where_clause)
-
-    # Sample the specified number of rows
-    sampled_df = df.limit(num_rows)
+        # Use spark.sql to execute the complex WHERE clause
+        filtered_df = spark.sql(f"""
+            SELECT * FROM {source_schema}.{source_table}
+            WHERE {where_clause}
+        """)
+        
+        # Sample the specified number of rows from the filtered DataFrame
+        sampled_df = filtered_df.limit(num_rows)
+    else:
+        # If no WHERE clause, sample directly from the original DataFrame
+        sampled_df = df.limit(num_rows)
 
     # Create the target schema if it doesn't exist
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
