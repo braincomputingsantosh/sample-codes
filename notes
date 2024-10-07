@@ -6,39 +6,43 @@ dbutils.widgets.text("source_schema", "bk_mpo_raw", "Source Schema")
 dbutils.widgets.text("source_table", "loan_month_loss_mit", "Source Table")
 dbutils.widgets.text("target_schema", "test_bk_mpo", "Target Schema")
 dbutils.widgets.text("target_table", "loan_month_loss_mit", "Target Table")
-dbutils.widgets.text("num_rows", "2000", "Number of Rows")
+dbutils.widgets.text("num_rows", "all", "Number of Rows (Enter 'all' for all rows)")
 dbutils.widgets.text("where_clause", "", "WHERE Clause (Optional)")
+dbutils.widgets.dropdown("write_mode", "overwrite", ["overwrite", "append"], "Write Mode")
 
-def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause):
+def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode):
     spark = SparkSession.builder.appName("DataMigration").getOrCreate()
 
     # Set the database
     spark.sql(f"USE {source_schema}")
 
-    # Read the source table
-    df = spark.table(f"{source_schema}.{source_table}")
-
-    # Apply WHERE clause if provided
+    # Construct the SQL query
+    query = f"SELECT * FROM {source_schema}.{source_table}"
     if where_clause:
-        # Use spark.sql to execute the complex WHERE clause
-        filtered_df = spark.sql(f"""
-            SELECT * FROM {source_schema}.{source_table}
-            WHERE {where_clause}
-        """)
-        
-        # Sample the specified number of rows from the filtered DataFrame
-        sampled_df = filtered_df.limit(num_rows)
+        query += f" WHERE {where_clause}"
+
+    # Execute the query
+    df = spark.sql(query)
+
+    # Apply row limit if specified
+    if num_rows.lower() != 'all':
+        try:
+            limit = int(num_rows)
+            df = df.limit(limit)
+            print(f"Migrating {limit} rows")
+        except ValueError:
+            print("Invalid number of rows specified. Migrating all rows.")
     else:
-        # If no WHERE clause, sample directly from the original DataFrame
-        sampled_df = df.limit(num_rows)
+        print("Migrating all rows")
 
     # Create the target schema if it doesn't exist
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
 
-    # Create the target table with the same schema as the source table
-    sampled_df.write.mode("overwrite").saveAsTable(f"{target_schema}.{target_table}")
+    # Write data to the target table
+    df.write.mode(write_mode).saveAsTable(f"{target_schema}.{target_table}")
 
-    print(f"Successfully migrated {num_rows} rows from {source_schema}.{source_table} to {target_schema}.{target_table}")
+    print(f"Successfully migrated data from {source_schema}.{source_table} to {target_schema}.{target_table}")
+    print(f"Write mode: {write_mode}")
     if where_clause:
         print(f"Applied WHERE clause: {where_clause}")
 
@@ -47,8 +51,9 @@ source_schema = dbutils.widgets.get("source_schema")
 source_table = dbutils.widgets.get("source_table")
 target_schema = dbutils.widgets.get("target_schema")
 target_table = dbutils.widgets.get("target_table")
-num_rows = int(dbutils.widgets.get("num_rows"))
+num_rows = dbutils.widgets.get("num_rows")
 where_clause = dbutils.widgets.get("where_clause")
+write_mode = dbutils.widgets.get("write_mode")
 
 # Call the function
-migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause)
+migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode)
