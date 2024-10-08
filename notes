@@ -3,14 +3,15 @@ from pyspark.sql.functions import *
 
 # Create input widgets
 dbutils.widgets.text("source_schema", "bk_mpo_raw", "Source Schema")
-dbutils.widgets.text("source_table", "loan_month_loss_mit", "Source Table")
+dbutils.widgets.text("source_table", "loan_arm", "Source Table")
 dbutils.widgets.text("target_schema", "test_bk_mpo", "Target Schema")
-dbutils.widgets.text("target_table", "loan_month_loss_mit", "Target Table")
+dbutils.widgets.text("target_table", "loan_arm", "Target Table")
 dbutils.widgets.text("num_rows", "all", "Number of Rows (Enter 'all' for all rows)")
 dbutils.widgets.text("where_clause", "", "WHERE Clause (Optional)")
 dbutils.widgets.dropdown("write_mode", "overwrite", ["overwrite", "append"], "Write Mode")
+dbutils.widgets.text("month_filter", "", "Month Filter (e.g., 07 for July)")
 
-def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode):
+def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode, month_filter):
     spark = SparkSession.builder.appName("DataMigration").getOrCreate()
 
     # Set the database
@@ -18,8 +19,16 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
 
     # Construct the SQL query
     query = f"SELECT * FROM {source_schema}.{source_table}"
+    
+    # Construct the WHERE clause
+    conditions = []
     if where_clause:
-        query += f" WHERE {where_clause}"
+        conditions.append(where_clause)
+    if month_filter:
+        conditions.append(f"source_metadata.file_path LIKE '%/{month_filter}/%'")
+    
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
 
     # Execute the query
     df = spark.sql(query)
@@ -57,6 +66,8 @@ def migrate_data(source_schema, source_table, target_schema, target_table, num_r
     print(f"Rows in Target Table After Migration: {migrated_rows}")
     if where_clause:
         print(f"WHERE Clause Applied: {where_clause}")
+    if month_filter:
+        print(f"Month Filter Applied: {month_filter}")
     print(f"Status: {'Completed' if rows_to_migrate > 0 else 'No rows migrated'}")
     print("-----------------------------\n")
 
@@ -68,6 +79,7 @@ target_table = dbutils.widgets.get("target_table")
 num_rows = dbutils.widgets.get("num_rows")
 where_clause = dbutils.widgets.get("where_clause")
 write_mode = dbutils.widgets.get("write_mode")
+month_filter = dbutils.widgets.get("month_filter")
 
 # Call the function
-migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode)
+migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode, month_filter)
