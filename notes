@@ -1,85 +1,68 @@
+# Databricks notebook source
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
+from pyspark.dbutils import DBUtils
+import psycopg2
 
-# Create input widgets
-dbutils.widgets.text("source_schema", "bk_mpo_raw", "Source Schema")
-dbutils.widgets.text("source_table", "loan_arm", "Source Table")
-dbutils.widgets.text("target_schema", "test_bk_mpo", "Target Schema")
-dbutils.widgets.text("target_table", "loan_arm", "Target Table")
-dbutils.widgets.text("num_rows", "all", "Number of Rows (Enter 'all' for all rows)")
-dbutils.widgets.text("where_clause", "", "WHERE Clause (Optional)")
-dbutils.widgets.dropdown("write_mode", "overwrite", ["overwrite", "append"], "Write Mode")
-dbutils.widgets.text("month_filter", "", "Month Filter (e.g., 07 for July)")
+# COMMAND ----------
 
-def migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode, month_filter):
-    spark = SparkSession.builder.appName("DataMigration").getOrCreate()
+# Create widgets for user input
+dbutils.widgets.text("host", "", "Host")
+dbutils.widgets.text("port", "5432", "Port")
+dbutils.widgets.text("database", "", "Database")
+dbutils.widgets.text("user", "", "User")
+dbutils.widgets.text("password", "", "Password")
 
-    # Set the database
-    spark.sql(f"USE {source_schema}")
+# COMMAND ----------
 
-    # Construct the SQL query
-    query = f"SELECT * FROM {source_schema}.{source_table}"
+# Retrieve widget values
+host = dbutils.widgets.get("host")
+port = dbutils.widgets.get("port")
+database = dbutils.widgets.get("database")
+user = dbutils.widgets.get("user")
+password = dbutils.widgets.get("password")
+
+# COMMAND ----------
+
+# Function to test the connection
+def test_connection(host, port, database, user, password):
+    try:
+        conn = psycopg2.connect(
+            host=host,
+            port=port,
+            database=database,
+            user=user,
+            password=password
+        )
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Connection error: {str(e)}")
+        return False
+
+# COMMAND ----------
+
+# Test the connection and display result
+if test_connection(host, port, database, user, password):
+    print("Connection successful!")
     
-    # Construct the WHERE clause
-    conditions = []
-    if where_clause:
-        conditions.append(where_clause)
-    if month_filter:
-        conditions.append(f"source_metadata.file_path LIKE '%/{month_filter}/%'")
+    # Example: Create a DataFrame from a PostgreSQL table
+    jdbc_url = f"jdbc:postgresql://{host}:{port}/{database}"
+    table_name = "your_table_name"  # Replace with an actual table name
     
-    if conditions:
-        query += " WHERE " + " AND ".join(conditions)
-
-    # Execute the query
-    df = spark.sql(query)
-
-    # Determine the number of rows to migrate
-    if num_rows.lower() == 'all':
-        rows_to_migrate = None  # We'll count after migration
-    else:
-        try:
-            rows_to_migrate = int(num_rows)
-            df = df.limit(rows_to_migrate)
-        except ValueError:
-            print("Invalid number of rows specified. Migrating all rows.")
-            rows_to_migrate = None
-
-    # Create the target schema if it doesn't exist
-    spark.sql(f"CREATE SCHEMA IF NOT EXISTS {target_schema}")
-
-    # Write data to the target table
-    df.write.mode(write_mode).saveAsTable(f"{target_schema}.{target_table}")
-
-    # Count rows after migration
-    migrated_rows = spark.table(f"{target_schema}.{target_table}").count()
+    df = spark.read \
+        .format("jdbc") \
+        .option("url", jdbc_url) \
+        .option("dbtable", table_name) \
+        .option("user", user) \
+        .option("password", password) \
+        .load()
     
-    # If we migrated all rows, update rows_to_migrate
-    if rows_to_migrate is None:
-        rows_to_migrate = migrated_rows
+    print(f"Successfully loaded data from table '{table_name}'")
+    df.show(5)  # Display first 5 rows of the DataFrame
+else:
+    print("Connection failed. Please check your connection details and try again.")
 
-    # Print detailed information
-    print("\n--- Data Migration Summary ---")
-    print(f"Source: {source_schema}.{source_table}")
-    print(f"Target: {target_schema}.{target_table}")
-    print(f"Write Mode: {write_mode}")
-    print(f"Rows Migrated: {rows_to_migrate}")
-    print(f"Rows in Target Table After Migration: {migrated_rows}")
-    if where_clause:
-        print(f"WHERE Clause Applied: {where_clause}")
-    if month_filter:
-        print(f"Month Filter Applied: {month_filter}")
-    print(f"Status: {'Completed' if rows_to_migrate > 0 else 'No rows migrated'}")
-    print("-----------------------------\n")
+# COMMAND ----------
 
-# Get parameters from widgets
-source_schema = dbutils.widgets.get("source_schema")
-source_table = dbutils.widgets.get("source_table")
-target_schema = dbutils.widgets.get("target_schema")
-target_table = dbutils.widgets.get("target_table")
-num_rows = dbutils.widgets.get("num_rows")
-where_clause = dbutils.widgets.get("where_clause")
-write_mode = dbutils.widgets.get("write_mode")
-month_filter = dbutils.widgets.get("month_filter")
-
-# Call the function
-migrate_data(source_schema, source_table, target_schema, target_table, num_rows, where_clause, write_mode, month_filter)
+# Clean up widgets
+dbutils.widgets.removeAll()
