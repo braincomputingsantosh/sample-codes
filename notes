@@ -1,17 +1,28 @@
+# Databricks notebook source
 import requests
 import json
-from databricks_cli.sdk.api_client import ApiClient
+
+# COMMAND ----------
 
 def get_current_user_groups():
-    # Initialize the Databricks API client
-    api_client = ApiClient()
+    # Get the Databricks host and token
+    host = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiUrl().getOrElse(None)
+    token = dbutils.notebook.entry_point.getDbutils().notebook().getContext().apiToken().getOrElse(None)
+
+    # Set up the headers for API requests
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json',
+    }
 
     # Get the current user's information
-    current_user = api_client.perform_query('GET', '/preview/scim/v2/Me')
+    current_user_response = requests.get(f'{host}/api/2.0/preview/scim/v2/Me', headers=headers)
+    current_user = current_user_response.json()
     user_id = current_user['id']
 
     # Get the list of groups
-    groups = api_client.perform_query('GET', '/preview/scim/v2/Groups')
+    groups_response = requests.get(f'{host}/api/2.0/preview/scim/v2/Groups', headers=headers)
+    groups = groups_response.json()
 
     # Check which groups the user belongs to
     user_groups = []
@@ -22,18 +33,26 @@ def get_current_user_groups():
 
     return user_groups
 
-def main():
-    try:
-        user_groups = get_current_user_groups()
-        if user_groups:
-            print("You belong to the following Databricks groups:")
-            for group in user_groups:
-                print(f"- {group}")
-        else:
-            print("You don't belong to any Databricks groups.")
-    except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        print("Make sure you have set up your Databricks CLI configuration correctly.")
+# COMMAND ----------
 
-if __name__ == "__main__":
-    main()
+user_groups = get_current_user_groups()
+
+if user_groups:
+    print("You belong to the following Databricks groups:")
+    for group in user_groups:
+        print(f"- {group}")
+else:
+    print("You don't belong to any Databricks groups.")
+
+# COMMAND ----------
+
+# Optional: Display the groups in a more visually appealing way
+from pyspark.sql.types import StringType
+from pyspark.sql.functions import lit
+
+if user_groups:
+    df = spark.createDataFrame([(group,) for group in user_groups], ["Group Name"])
+    display(df)
+else:
+    df = spark.createDataFrame([("You don't belong to any Databricks groups.",)], ["Message"])
+    display(df)
