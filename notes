@@ -1,68 +1,39 @@
-# Databricks notebook source
-from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
-import psycopg2
+import requests
+import json
+from databricks_cli.sdk.api_client import ApiClient
 
-# COMMAND ----------
+def get_current_user_groups():
+    # Initialize the Databricks API client
+    api_client = ApiClient()
 
-# Create widgets for user input
-dbutils.widgets.text("host", "", "Host")
-dbutils.widgets.text("port", "5432", "Port")
-dbutils.widgets.text("database", "", "Database")
-dbutils.widgets.text("user", "", "User")
-dbutils.widgets.text("password", "", "Password")
+    # Get the current user's information
+    current_user = api_client.perform_query('GET', '/preview/scim/v2/Me')
+    user_id = current_user['id']
 
-# COMMAND ----------
+    # Get the list of groups
+    groups = api_client.perform_query('GET', '/preview/scim/v2/Groups')
 
-# Retrieve widget values
-host = dbutils.widgets.get("host")
-port = dbutils.widgets.get("port")
-database = dbutils.widgets.get("database")
-user = dbutils.widgets.get("user")
-password = dbutils.widgets.get("password")
+    # Check which groups the user belongs to
+    user_groups = []
+    for group in groups.get('Resources', []):
+        for member in group.get('members', []):
+            if member['value'] == user_id:
+                user_groups.append(group['displayName'])
 
-# COMMAND ----------
+    return user_groups
 
-# Function to test the connection
-def test_connection(host, port, database, user, password):
+def main():
     try:
-        conn = psycopg2.connect(
-            host=host,
-            port=port,
-            database=database,
-            user=user,
-            password=password
-        )
-        conn.close()
-        return True
+        user_groups = get_current_user_groups()
+        if user_groups:
+            print("You belong to the following Databricks groups:")
+            for group in user_groups:
+                print(f"- {group}")
+        else:
+            print("You don't belong to any Databricks groups.")
     except Exception as e:
-        print(f"Connection error: {str(e)}")
-        return False
+        print(f"An error occurred: {str(e)}")
+        print("Make sure you have set up your Databricks CLI configuration correctly.")
 
-# COMMAND ----------
-
-# Test the connection and display result
-if test_connection(host, port, database, user, password):
-    print("Connection successful!")
-    
-    # Example: Create a DataFrame from a PostgreSQL table
-    jdbc_url = f"jdbc:postgresql://{host}:{port}/{database}"
-    table_name = "your_table_name"  # Replace with an actual table name
-    
-    df = spark.read \
-        .format("jdbc") \
-        .option("url", jdbc_url) \
-        .option("dbtable", table_name) \
-        .option("user", user) \
-        .option("password", password) \
-        .load()
-    
-    print(f"Successfully loaded data from table '{table_name}'")
-    df.show(5)  # Display first 5 rows of the DataFrame
-else:
-    print("Connection failed. Please check your connection details and try again.")
-
-# COMMAND ----------
-
-# Clean up widgets
-dbutils.widgets.removeAll()
+if __name__ == "__main__":
+    main()
