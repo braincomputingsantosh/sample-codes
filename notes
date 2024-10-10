@@ -1,125 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Append Operation Notebook with Enhanced Metadata Filtering
-
-# COMMAND ----------
-
-# List of tables that need append operation
-tables_to_append = ['loan_month', 'loan_month_last_mit', 'heloc']
-
-# Source schema name
-source_schema_name = 'bk_hpi_raw'
-
-# Target schema name
-target_schema_name = 'bk_hpi_processed'
-
-# Metadata schemas and tables
-source_metadata_table = 'source_metadata'
-target_metadata_schema = 'bk_mpo'
-target_metadata_table = 'source_meta_data'
-
-# Current month and year for filtering (update these as needed)
-current_month = '07'
-current_year = '2024'
-
-# COMMAND ----------
-
-from pyspark.sql.functions import current_timestamp, col, regexp_extract
-from pyspark.sql.utils import AnalysisException, ParseException
-
-def append_and_update_metadata(table_name):
-    try:
-        # Construct full table names
-        source_table = f"{source_schema_name}.{table_name}"
-        target_table = f"{target_schema_name}.{table_name}"
-        
-        # Read the source table
-        source_df = spark.table(source_table)
-        
-        # Read the target table
-        target_df = spark.table(target_table)
-        
-        # Perform the append operation
-        appended_df = target_df.union(source_df)
-        
-        # Update metadata
-        appended_df = appended_df.withColumn("last_updated", current_timestamp())
-        
-        # Write the appended data back to the target table
-        appended_df.write.mode("overwrite").saveAsTable(target_table)
-        
-        print(f"Append operation completed for {table_name}")
-        print(f"Source: {source_table}")
-        print(f"Target: {target_table}")
-    except AnalysisException as e:
-        print(f"Error: Table not found or invalid schema - {str(e)}")
-    except ParseException as e:
-        print(f"Error: Invalid SQL or DataFrame operation - {str(e)}")
-    except Exception as e:
-        print(f"Unexpected error occurred while appending {table_name}: {str(e)}")
-
-def update_source_metadata():
-    try:
-        # Read source metadata
-        source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
-        
-        # Extract year and month from file_name column
-        source_metadata_df = source_metadata_df.withColumn(
-            "extracted_year", regexp_extract(col("file_name"), r"/(\d{4})/", 1)
-        ).withColumn(
-            "extracted_month", regexp_extract(col("file_name"), r"/(\d{2})/McDashCore", 1)
-        )
-        
-        # Filter rows where file_name contains 'loadArm.txt' and matches current year/month
-        filtered_metadata = source_metadata_df.filter(
-            (col("file_name").like("%LoanArm.txt")) &
-            (col("extracted_year") == current_year) &
-            (col("extracted_month") == current_month)
-        )
-        
-        # Read target metadata table
-        target_metadata_df = spark.table(f"{target_metadata_schema}.{target_metadata_table}")
-        
-        # Append filtered metadata to target
-        updated_metadata = target_metadata_df.union(filtered_metadata.drop("extracted_year", "extracted_month"))
-        
-        # Write updated metadata back to target table
-        updated_metadata.write.mode("overwrite").saveAsTable(f"{target_metadata_schema}.{target_metadata_table}")
-        
-        print(f"Metadata updated in {target_metadata_schema}.{target_metadata_table}")
-        print(f"Filtered for year: {current_year}, month: {current_month}")
-    except AnalysisException as e:
-        print(f"Error: Metadata table not found or invalid schema - {str(e)}")
-    except ParseException as e:
-        print(f"Error: Invalid SQL or DataFrame operation in metadata update - {str(e)}")
-    except Exception as e:
-        print(f"Unexpected error occurred while updating metadata: {str(e)}")
-
-# COMMAND ----------
-
-# Perform append operation for each table in the list
-for table in tables_to_append:
-    try:
-        append_and_update_metadata(table)
-    except Exception as e:
-        print(f"Failed to process table {table}: {str(e)}")
-
-# Update source metadata
-try:
-    update_source_metadata()
-except Exception as e:
-    print(f"Failed to update source metadata: {str(e)}")
-
-# COMMAND ----------
-
-print("All append operations and metadata updates completed.")
-
-
------- Job version
-
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Append Operation Notebook with Enhanced Metadata Filtering (Job Version)
+# MAGIC # Insert Operation Notebook with Metadata Update (Job Version)
 
 # COMMAND ----------
 
@@ -130,8 +11,8 @@ dbutils.widgets.text("current_month", "07", "Current Month")
 current_year = dbutils.widgets.get("current_year")
 current_month = dbutils.widgets.get("current_month")
 
-# List of tables that need append operation
-tables_to_append = ['loan_month', 'loan_month_last_mit', 'heloc']
+# List of tables that need insert operation
+tables_to_insert = ['customer_data', 'transaction_history', 'product_catalog']
 
 # Source schema name
 source_schema_name = 'bk_hpi_raw'
@@ -151,14 +32,86 @@ print(f"Job will process data for Year: {current_year}, Month: {current_month}")
 from pyspark.sql.functions import current_timestamp, col, regexp_extract
 from pyspark.sql.utils import AnalysisException, ParseException
 
-# [The rest of the code remains the same as in the previous version]
+def insert_new_records(table_name):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Read the target table
+        target_df = spark.table(target_table)
+        
+        # Identify new records (assuming there's a unique identifier column 'id')
+        new_records = source_df.join(target_df, "id", "left_anti")
+        
+        # Add metadata
+        new_records = new_records.withColumn("inserted_at", current_timestamp())
+        
+        # Insert new records into the target table
+        new_records.write.mode("append").saveAsTable(target_table)
+        
+        print(f"Insert operation completed for {table_name}")
+        print(f"Source: {source_table}")
+        print(f"Target: {target_table}")
+        print(f"Number of new records inserted: {new_records.count()}")
+    except AnalysisException as e:
+        print(f"Error: Table not found or invalid schema - {str(e)}")
+        raise
+    except ParseException as e:
+        print(f"Error: Invalid SQL or DataFrame operation - {str(e)}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error occurred while inserting into {table_name}: {str(e)}")
+        raise
+
+def update_source_metadata():
+    try:
+        # Read source metadata
+        source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
+        
+        # Extract year and month from file_name column
+        source_metadata_df = source_metadata_df.withColumn(
+            "extracted_year", regexp_extract(col("file_name"), r"/(\d{4})/", 1)
+        ).withColumn(
+            "extracted_month", regexp_extract(col("file_name"), r"/(\d{2})/McDashCore", 1)
+        )
+        
+        # Filter rows based on the current year and month
+        filtered_metadata = source_metadata_df.filter(
+            (col("extracted_year") == current_year) &
+            (col("extracted_month") == current_month)
+        )
+        
+        # Read target metadata table
+        target_metadata_df = spark.table(f"{target_metadata_schema}.{target_metadata_table}")
+        
+        # Append filtered metadata to target
+        updated_metadata = target_metadata_df.union(filtered_metadata.drop("extracted_year", "extracted_month"))
+        
+        # Write updated metadata back to target table
+        updated_metadata.write.mode("overwrite").saveAsTable(f"{target_metadata_schema}.{target_metadata_table}")
+        
+        print(f"Metadata updated in {target_metadata_schema}.{target_metadata_table}")
+        print(f"Filtered for year: {current_year}, month: {current_month}")
+    except AnalysisException as e:
+        print(f"Error: Metadata table not found or invalid schema - {str(e)}")
+        raise
+    except ParseException as e:
+        print(f"Error: Invalid SQL or DataFrame operation in metadata update - {str(e)}")
+        raise
+    except Exception as e:
+        print(f"Unexpected error occurred while updating metadata: {str(e)}")
+        raise
 
 # COMMAND ----------
 
-# Perform append operation for each table in the list
-for table in tables_to_append:
+# Perform insert operation for each table in the list
+for table in tables_to_insert:
     try:
-        append_and_update_metadata(table)
+        insert_new_records(table)
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
         dbutils.notebook.exit(f"Failed to process table {table}")
@@ -172,5 +125,5 @@ except Exception as e:
 
 # COMMAND ----------
 
-print("All append operations and metadata updates completed successfully.")
+print("All insert operations and metadata updates completed successfully.")
 dbutils.notebook.exit("SUCCESS")
