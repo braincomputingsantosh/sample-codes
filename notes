@@ -1,47 +1,33 @@
-from pyspark.sql.functions import current_timestamp, col, lit
+from pyspark.sql.functions import current_timestamp, col, lit, regexp_extract, year, month
 from pyspark.sql.types import StringType
 import traceback
 
-# Configuration
-source_schema_name = "bk_hpi_raw"
-target_schema_name = "bk_hpi_processed"
-source_metadata_table = "source_metadata"
-target_metadata_table = "source_metadata_new"
-
-# List of tables to merge
-tables_to_merge = ['customer_data', 'transaction_history', 'product_catalog']  # Update this list as needed
-
-def insert_table_data(table_name):
+def update_source_metadata(tables_to_append, append_results, target_year, target_month):
     try:
-        # Construct full table names
-        source_table = f"{source_schema_name}.{table_name}"
-        target_table = f"{target_schema_name}.{table_name}"
-        
-        # Read the source table
-        source_df = spark.table(source_table)
-        
-        # Insert new records into the target table
-        # This assumes that the target table already exists and has a compatible schema
-        source_df.write.mode("append").saveAsTable(target_table)
-        
-        print(f"Insert operation completed for {table_name}")
-        print(f"Source: {source_table}")
-        print(f"Target: {target_table}")
-        return "PROCESSED"
-    except Exception as e:
-        error_message = f"Error inserting data for {table_name}: {str(e)}"
-        print(error_message)
-        return "FAILED"
-
-def update_source_metadata(insert_results):
-    try:
-        print("Starting metadata update")
-        
         # Read source metadata
         source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
         
+        # Extract year and month from file_path
+        source_metadata_df = source_metadata_df.withColumn(
+            "extracted_year", regexp_extract(col("file_path"), r"/(\d{4})/", 1)
+        ).withColumn(
+            "extracted_month", regexp_extract(col("file_path"), r"/(\d{4})/(\d{2})/", 2)
+        )
+        
+        # Filter rows based on the tables_to_append and year/month
+        table_pattern = "|".join(tables_to_append)
+        filtered_metadata = source_metadata_df.filter(
+            (col("file_name").rlike(f"(?i){table_pattern}")) &
+            (col("extracted_year") == target_year) &
+            (col("extracted_month") == target_month)
+        )
+        
+        if filtered_metadata.count() == 0:
+            print(f"No metadata found for tables: {', '.join(tables_to_append)} in year {target_year}, month {target_month}")
+            return
+        
         # Create a dictionary to map table names to their process states
-        table_status = {table: status for table, status in insert_results}
+        table_status = {table: status for table, status in append_results}
         
         def get_process_state(file_name):
             for table, status in table_status.items():
@@ -49,60 +35,66 @@ def update_source_metadata(insert_results):
                     return status
             return "UNKNOWN"
         
-        get_process_state_udf = spark.udf.register("get_process_state", get_process_state, StringType())
+        get_process_state_udf = udf(get_process_state, StringType())
         
         # Add new columns and transform existing ones
-        updated_metadata = source_metadata_df.select(
+        updated_metadata = filtered_metadata.select(
             col("id"),
             lit("bk_mpo").alias("project_name"),
             col("file_name"),
             col("file_path"),
             current_timestamp().alias("process_date"),
-            col("file_type"),
+            regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
             get_process_state_udf(col("file_name")).alias("file_process_state"),
             current_timestamp().alias("process_start_dtm"),
             current_timestamp().alias("process_end_dtm"),
             col("file_size")
         )
         
-        # Insert the updated metadata to the target table
-        updated_metadata.write.mode("append").saveAsTable(f"{target_schema_name}.{target_metadata_table}")
+        # Define the target table
+        target_table_path = f"{target_metadata_schema}.{target_metadata_table}"
         
-        print(f"Metadata updated in {target_schema_name}.{target_metadata_table}")
+        # Append the updated metadata to the target table
+        updated_metadata.write.mode("append").saveAsTable(target_table_path)
+        
+        # Log processing results
+        print(f"Metadata updated in {target_table_path}")
         print(f"Number of records processed: {updated_metadata.count()}")
+        
+        # Log status for each table
+        for table, status in append_results:
+            print(f"Table {table}: {status}")
         
     except Exception as e:
         error_message = f"Error updating metadata: {str(e)}\n{traceback.format_exc()}"
         print(error_message)
         raise
 
-# Main execution
-insert_results = []
+# Example usage in main execution
+target_year = "2024"
+target_month = "04"  # Assuming you want to process April 2024
+
+append_results = []
 overall_status = "SUCCESS"
 
-# Perform insert operation for each table in the list
-for table in tables_to_merge:
+# Perform append operation for each table in the list
+for table in tables_to_append:
     try:
-        status = insert_table_data(table)
-        insert_results.append((table, status))
-        if status == "FAILED":
-            overall_status = "PARTIAL_FAILURE"
+        # Your append logic here
+        status = "PROCESSED"  # Replace with actual append logic result
+        append_results.append((table, status))
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
-        insert_results.append((table, "FAILED"))
+        append_results.append((table, "FAILED"))
         overall_status = "PARTIAL_FAILURE"
 
 # Update source metadata
 try:
-    update_source_metadata(insert_results)
+    update_source_metadata(tables_to_append, append_results, target_year, target_month)
     print("Metadata update completed successfully.")
 except Exception as e:
     print(f"Failed to update source metadata: {str(e)}")
     overall_status = "FAILURE"
-
-# Log final status for each table
-for table, status in insert_results:
-    print(f"Table {table}: {status}")
 
 print(f"All operations completed. Overall status: {overall_status}")
 dbutils.notebook.exit(overall_status)
