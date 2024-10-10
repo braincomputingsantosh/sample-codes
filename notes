@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, monotonically_increasing_id, from_json, col, to_timestamp
+from pyspark.sql.functions import current_timestamp, lit, from_json, col
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 import logging
 
@@ -13,9 +13,8 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
     
     logger.info(f"Starting metadata processing. Target table: {target_table}, Year: {source_year}, Month: {source_month}")
     
-    # Define the schema for the new table
+    # Define the schema for the new table (without the 'id' field)
     new_schema = StructType([
-        StructField("id", StringType(), True),
         StructField("source_table", StringType(), True),
         StructField("file_name", StringType(), True),
         StructField("file_size", StringType(), True),
@@ -75,9 +74,6 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             logger.info(f"Processed {table} successfully for {source_year}/{source_month}")
         except Exception as e:
             logger.error(f"Error processing table {table}: {str(e)}")
-    
-    # Add monotonically increasing ID
-    result_df = result_df.withColumn("id", monotonically_increasing_id().cast(StringType()))
     
     # Persist the data to the specified target table
     try:
