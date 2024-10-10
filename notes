@@ -1,53 +1,24 @@
-from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, when, udf
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit
 from pyspark.sql.types import StringType
 from delta.tables import DeltaTable
-from datetime import datetime
 import traceback
 
-def append_and_update_metadata(table_name):
+def update_source_metadata(tables_to_append):
     try:
-        # Construct full table names
-        source_table = f"{source_schema_name}.{table_name}"
-        target_table = f"{target_schema_name}.{table_name}"
+        print(f"Starting metadata update for tables: {', '.join(tables_to_append)}")
         
-        # Read the source table
-        source_df = spark.table(source_table)
-        
-        # Add metadata
-        source_df = source_df.withColumn("appended_at", current_timestamp())
-        
-        # Append the data to the target table
-        source_df.write.mode("append").saveAsTable(target_table)
-        
-        print(f"Append operation completed for {table_name}")
-        print(f"Source: {source_table}")
-        print(f"Target: {target_table}")
-        return "PROCESSED"
-    except Exception as e:
-        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
-        print(error_message)
-        return "FAILED"
-
-def update_source_metadata(tables_to_append, append_results):
-    try:
         # Read source metadata
         source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
         
         # Filter rows based on the tables_to_append
+        table_pattern = "|".join(tables_to_append)
         filtered_metadata = source_metadata_df.filter(
-            col("file_name").rlike("|".join(tables_to_append))
+            col("file_name").rlike(f"(?i){table_pattern}")
         )
         
-        # Create a dictionary to map table names to their process states
-        table_status = {table: status for table, status in append_results}
-        
-        def get_process_state(file_name):
-            for table, status in table_status.items():
-                if table.lower() in file_name.lower():
-                    return status
-            return "UNKNOWN"
-        
-        get_process_state_udf = udf(get_process_state, StringType())
+        if filtered_metadata.count() == 0:
+            print(f"No metadata found for tables: {', '.join(tables_to_append)}")
+            return
         
         # Add new columns and transform existing ones
         updated_metadata = filtered_metadata.select(
@@ -57,7 +28,7 @@ def update_source_metadata(tables_to_append, append_results):
             col("file_path"),
             current_timestamp().alias("process_date"),
             regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
-            get_process_state_udf(col("file_name")).alias("file_process_state"),
+            lit("PROCESSED").alias("file_process_state"),  # Assuming all files are processed
             current_timestamp().alias("process_start_dtm"),
             current_timestamp().alias("process_end_dtm"),
             col("file_block_length").alias("file_size")
@@ -67,68 +38,37 @@ def update_source_metadata(tables_to_append, append_results):
         target_table_path = f"{target_metadata_schema}.source_metadata_new"
         
         # Check if the target table exists
-        if spark._jsparkSession.catalog().tableExists(target_table_path):
-            # If the table exists, use it
-            target_table = DeltaTable.forName(spark, target_table_path)
-            
-            # Perform the merge operation
-            (target_table.alias("target")
-             .merge(
-                 updated_metadata.alias("updates"),
-                 "target.id = updates.id"
-             )
-             .whenMatchedUpdateAll()
-             .whenNotMatchedInsertAll()
-             .execute())
-            
-            # Log processing results
-            success_count = updated_metadata.filter(col("file_process_state") == "PROCESSED").count()
-            failed_count = updated_metadata.filter(col("file_process_state") == "FAILED").count()
-            print(f"Metadata updated in {target_metadata_schema}.source_metadata_new")
-            print(f"Processed tables: {', '.join(tables_to_append)}")
-            print(f"Successfully processed files: {success_count}")
-            print(f"Failed files: {failed_count}")
-            
-            if failed_count > 0:
-                print("Warning: Some files failed to process. Check the logs for details.")
-        else:
-            # If the table doesn't exist, raise an error
+        if not spark._jsparkSession.catalog().tableExists(target_table_path):
             raise Exception(f"Target table {target_table_path} does not exist. Please create the table before running this operation.")
+        
+        # Perform the merge operation
+        target_table = DeltaTable.forName(spark, target_table_path)
+        
+        (target_table.alias("target")
+         .merge(
+             updated_metadata.alias("updates"),
+             "target.id = updates.id"
+         )
+         .whenMatchedUpdateAll()
+         .whenNotMatchedInsertAll()
+         .execute())
+        
+        # Log processing results
+        print(f"Metadata updated in {target_table_path}")
+        print(f"Number of records processed: {updated_metadata.count()}")
+        
     except Exception as e:
-        error_message = f"Unexpected error occurred while updating metadata: {str(e)}\n{traceback.format_exc()}"
+        error_message = f"Error updating metadata: {str(e)}\n{traceback.format_exc()}"
         print(error_message)
         raise
 
-# Main execution
-append_results = []
-overall_status = "SUCCESS"
-
-# Perform append operation for each table in the list
-for table in tables_to_append:
-    try:
-        status = append_and_update_metadata(table)
-        append_results.append((table, status))
-        if status == "FAILED":
-            overall_status = "PARTIAL_FAILURE"
-    except Exception as e:
-        error_message = f"Failed to process table {table}: {str(e)}\n{traceback.format_exc()}"
-        print(error_message)
-        append_results.append((table, "FAILED"))
-        overall_status = "PARTIAL_FAILURE"
-
-# Update source metadata
+# Example usage in main execution
 try:
-    update_source_metadata(tables_to_append, append_results)
+    update_source_metadata(tables_to_append)
+    print("Metadata update completed successfully.")
 except Exception as e:
-    error_message = f"Failed to update source metadata: {str(e)}\n{traceback.format_exc()}"
-    print(error_message)
-    overall_status = "FAILURE"
+    print(f"Failed to update source metadata: {str(e)}")
+    dbutils.notebook.exit("FAILURE: Metadata update failed")
 
-print(f"Append operations and metadata updates completed. Overall status: {overall_status}")
-
-if overall_status != "SUCCESS":
-    error_summary = f"Job completed with status: {overall_status}. Check the logs for detailed error messages."
-    print(error_summary)
-    dbutils.notebook.exit(error_summary)
-else:
-    dbutils.notebook.exit("SUCCESS")
+print("All operations completed.")
+dbutils.notebook.exit("SUCCESS")
