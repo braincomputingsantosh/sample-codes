@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Insert Operation Notebook with Metadata Update (Job Version)
+# MAGIC # Merge (Upsert) Operation Notebook with Metadata Update (Job Version)
 
 # COMMAND ----------
 
@@ -11,8 +11,8 @@ dbutils.widgets.text("current_month", "07", "Current Month")
 current_year = dbutils.widgets.get("current_year")
 current_month = dbutils.widgets.get("current_month")
 
-# List of tables that need insert operation
-tables_to_insert = ['customer_data', 'transaction_history', 'product_catalog']
+# List of tables that need merge operation
+tables_to_merge = ['customer_data', 'transaction_history', 'product_catalog']
 
 # Source schema name
 source_schema_name = 'bk_hpi_raw'
@@ -31,8 +31,9 @@ print(f"Job will process data for Year: {current_year}, Month: {current_month}")
 
 from pyspark.sql.functions import current_timestamp, col, regexp_extract
 from pyspark.sql.utils import AnalysisException, ParseException
+from delta.tables import DeltaTable
 
-def insert_new_records(table_name):
+def merge_records(table_name):
     try:
         # Construct full table names
         source_table = f"{source_schema_name}.{table_name}"
@@ -41,22 +42,22 @@ def insert_new_records(table_name):
         # Read the source table
         source_df = spark.table(source_table)
         
-        # Read the target table
-        target_df = spark.table(target_table)
+        # Assuming the target table is a Delta table
+        target_delta_table = DeltaTable.forName(spark, target_table)
         
-        # Identify new records (assuming there's a unique identifier column 'id')
-        new_records = source_df.join(target_df, "id", "left_anti")
+        # Perform the merge operation
+        (target_delta_table.alias("target")
+         .merge(
+             source_df.alias("source"),
+             "target.id = source.id"  # Assume 'id' is the matching key
+         )
+         .whenMatchedUpdateAll()
+         .whenNotMatchedInsertAll()
+         .execute())
         
-        # Add metadata
-        new_records = new_records.withColumn("inserted_at", current_timestamp())
-        
-        # Insert new records into the target table
-        new_records.write.mode("append").saveAsTable(target_table)
-        
-        print(f"Insert operation completed for {table_name}")
+        print(f"Merge operation completed for {table_name}")
         print(f"Source: {source_table}")
         print(f"Target: {target_table}")
-        print(f"Number of new records inserted: {new_records.count()}")
     except AnalysisException as e:
         print(f"Error: Table not found or invalid schema - {str(e)}")
         raise
@@ -64,7 +65,7 @@ def insert_new_records(table_name):
         print(f"Error: Invalid SQL or DataFrame operation - {str(e)}")
         raise
     except Exception as e:
-        print(f"Unexpected error occurred while inserting into {table_name}: {str(e)}")
+        print(f"Unexpected error occurred while merging {table_name}: {str(e)}")
         raise
 
 def update_source_metadata():
@@ -108,10 +109,10 @@ def update_source_metadata():
 
 # COMMAND ----------
 
-# Perform insert operation for each table in the list
-for table in tables_to_insert:
+# Perform merge operation for each table in the list
+for table in tables_to_merge:
     try:
-        insert_new_records(table)
+        merge_records(table)
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
         dbutils.notebook.exit(f"Failed to process table {table}")
@@ -125,5 +126,5 @@ except Exception as e:
 
 # COMMAND ----------
 
-print("All insert operations and metadata updates completed successfully.")
+print("All merge operations and metadata updates completed successfully.")
 dbutils.notebook.exit("SUCCESS")
