@@ -1,6 +1,4 @@
 from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit
-from pyspark.sql.types import StringType
-from delta.tables import DeltaTable
 import traceback
 
 def update_source_metadata(tables_to_append):
@@ -28,30 +26,17 @@ def update_source_metadata(tables_to_append):
             col("file_path"),
             current_timestamp().alias("process_date"),
             regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
-            lit("PROCESSED").alias("file_process_state"),  # Assuming all files are processed
+            lit("PROCESSED").alias("file_process_state"),
             current_timestamp().alias("process_start_dtm"),
             current_timestamp().alias("process_end_dtm"),
             col("file_block_length").alias("file_size")
         )
         
-        # Define the target Delta table
+        # Define the target table path
         target_table_path = f"{target_metadata_schema}.source_metadata_new"
         
-        # Check if the target table exists
-        if not spark._jsparkSession.catalog().tableExists(target_table_path):
-            raise Exception(f"Target table {target_table_path} does not exist. Please create the table before running this operation.")
-        
-        # Perform the merge operation
-        target_table = DeltaTable.forName(spark, target_table_path)
-        
-        (target_table.alias("target")
-         .merge(
-             updated_metadata.alias("updates"),
-             "target.id = updates.id"
-         )
-         .whenMatchedUpdateAll()
-         .whenNotMatchedInsertAll()
-         .execute())
+        # Append the updated metadata to the target table
+        updated_metadata.write.mode("append").saveAsTable(target_table_path)
         
         # Log processing results
         print(f"Metadata updated in {target_table_path}")
