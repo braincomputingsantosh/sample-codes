@@ -1,5 +1,5 @@
 from pyspark.sql.functions import current_timestamp, col, lit, regexp_extract, from_json, schema_of_json
-from pyspark.sql.types import StringType, StructType, StructField
+from pyspark.sql.types import StringType
 import traceback
 
 def update_source_metadata(tables_to_append, append_results, target_year, target_month):
@@ -21,16 +21,13 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                     print(f"source_metadata column not found in table {source_table}")
                     continue
                 
-                # Define schema for source_metadata JSON
-                metadata_schema = StructType([
-                    StructField("file_name", StringType(), True),
-                    StructField("file_path", StringType(), True),
-                    StructField("file_size", StringType(), True)
-                ])
+                # Infer schema from the actual data
+                sample_json = source_df.select("source_metadata").first()[0]
+                inferred_schema = schema_of_json(lit(sample_json))
                 
-                # Extract and parse source_metadata
+                # Parse source_metadata using the inferred schema
                 parsed_metadata = source_df.select(
-                    from_json(col("source_metadata"), metadata_schema).alias("parsed_metadata")
+                    from_json(col("source_metadata"), inferred_schema).alias("parsed_metadata")
                 ).select("parsed_metadata.*")
                 
                 # Extract year and month from file_path
@@ -52,7 +49,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                 
                 # Add new columns and transform existing ones
                 updated_metadata = filtered_metadata.select(
-                    lit(None).cast(StringType()).alias("id"),  # You may need to generate a unique ID here
+                    lit(None).cast(StringType()).alias("id"),
                     lit("bk_mpo").alias("project_name"),
                     col("file_name"),
                     col("file_path"),
@@ -61,13 +58,14 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                     lit(table_status).alias("file_process_state"),
                     current_timestamp().alias("process_start_dtm"),
                     current_timestamp().alias("process_end_dtm"),
-                    col("file_size")
+                    col("file_size").cast(StringType()).alias("file_size")  # Ensure file_size is cast to string
                 )
                 
                 all_updated_metadata.append(updated_metadata)
                 
             except Exception as table_error:
                 print(f"Error processing table {table}: {str(table_error)}")
+                traceback.print_exc()
                 continue
         
         # Combine all updated metadata
