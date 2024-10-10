@@ -1,65 +1,76 @@
-from pyspark.sql.functions import current_timestamp, col, lit, regexp_extract, year, month
+from pyspark.sql.functions import current_timestamp, col, lit, regexp_extract, expr
 from pyspark.sql.types import StringType
 import traceback
 
 def update_source_metadata(tables_to_append, append_results, target_year, target_month):
     try:
-        # Read source metadata
-        source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
+        all_updated_metadata = []
+
+        for table in tables_to_append:
+            print(f"Processing metadata for table: {table}")
+            
+            # Construct the source metadata table name
+            source_metadata_table = f"{source_schema_name}.{table}.source_metadata"
+            
+            # Read source metadata
+            source_metadata_df = spark.table(source_metadata_table)
+            
+            # Extract year and month from file_path in the source_metadata column
+            source_metadata_df = source_metadata_df.withColumn(
+                "file_path", expr("source_metadata.file_path")
+            ).withColumn(
+                "extracted_year", regexp_extract(col("file_path"), r"/(\d{4})/", 1)
+            ).withColumn(
+                "extracted_month", regexp_extract(col("file_path"), r"/(\d{4})/(\d{2})/", 2)
+            )
+            
+            # Filter rows based on year/month
+            filtered_metadata = source_metadata_df.filter(
+                (col("extracted_year") == target_year) &
+                (col("extracted_month") == target_month)
+            )
+            
+            if filtered_metadata.count() == 0:
+                print(f"No metadata found for table {table} in year {target_year}, month {target_month}")
+                continue
+            
+            # Get the process state for this table
+            table_status = dict(append_results).get(table, "UNKNOWN")
+            
+            # Add new columns and transform existing ones
+            updated_metadata = filtered_metadata.select(
+                col("id"),
+                lit("bk_mpo").alias("project_name"),
+                col("source_metadata.file_name").alias("file_name"),
+                col("file_path"),
+                current_timestamp().alias("process_date"),
+                regexp_extract(col("source_metadata.file_name"), r"\.(\w+)$", 1).alias("file_type"),
+                lit(table_status).alias("file_process_state"),
+                current_timestamp().alias("process_start_dtm"),
+                current_timestamp().alias("process_end_dtm"),
+                col("source_metadata.file_size").alias("file_size")
+            )
+            
+            all_updated_metadata.append(updated_metadata)
         
-        # Extract year and month from file_path
-        source_metadata_df = source_metadata_df.withColumn(
-            "extracted_year", regexp_extract(col("file_path"), r"/(\d{4})/", 1)
-        ).withColumn(
-            "extracted_month", regexp_extract(col("file_path"), r"/(\d{4})/(\d{2})/", 2)
-        )
-        
-        # Filter rows based on the tables_to_append and year/month
-        table_pattern = "|".join(tables_to_append)
-        filtered_metadata = source_metadata_df.filter(
-            (col("file_name").rlike(f"(?i){table_pattern}")) &
-            (col("extracted_year") == target_year) &
-            (col("extracted_month") == target_month)
-        )
-        
-        if filtered_metadata.count() == 0:
-            print(f"No metadata found for tables: {', '.join(tables_to_append)} in year {target_year}, month {target_month}")
+        # Combine all updated metadata
+        if not all_updated_metadata:
+            print("No metadata found for any tables")
             return
         
-        # Create a dictionary to map table names to their process states
-        table_status = {table: status for table, status in append_results}
-        
-        def get_process_state(file_name):
-            for table, status in table_status.items():
-                if table.lower() in file_name.lower():
-                    return status
-            return "UNKNOWN"
-        
-        get_process_state_udf = udf(get_process_state, StringType())
-        
-        # Add new columns and transform existing ones
-        updated_metadata = filtered_metadata.select(
-            col("id"),
-            lit("bk_mpo").alias("project_name"),
-            col("file_name"),
-            col("file_path"),
-            current_timestamp().alias("process_date"),
-            regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
-            get_process_state_udf(col("file_name")).alias("file_process_state"),
-            current_timestamp().alias("process_start_dtm"),
-            current_timestamp().alias("process_end_dtm"),
-            col("file_size")
-        )
+        combined_metadata = all_updated_metadata[0]
+        for df in all_updated_metadata[1:]:
+            combined_metadata = combined_metadata.union(df)
         
         # Define the target table
         target_table_path = f"{target_metadata_schema}.{target_metadata_table}"
         
         # Append the updated metadata to the target table
-        updated_metadata.write.mode("append").saveAsTable(target_table_path)
+        combined_metadata.write.mode("append").saveAsTable(target_table_path)
         
         # Log processing results
         print(f"Metadata updated in {target_table_path}")
-        print(f"Number of records processed: {updated_metadata.count()}")
+        print(f"Total number of records processed: {combined_metadata.count()}")
         
         # Log status for each table
         for table, status in append_results:
@@ -74,6 +85,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
 target_year = "2024"
 target_month = "04"  # Assuming you want to process April 2024
 
+tables_to_append = ['heloc', 'loan_month', 'loan_month_last_mit']  # Add your table names here
 append_results = []
 overall_status = "SUCCESS"
 
