@@ -2,6 +2,31 @@ from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, w
 from pyspark.sql.types import StringType
 from delta.tables import DeltaTable
 from datetime import datetime
+import traceback
+
+def append_and_update_metadata(table_name):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Add metadata
+        source_df = source_df.withColumn("appended_at", current_timestamp())
+        
+        # Append the data to the target table
+        source_df.write.mode("append").saveAsTable(target_table)
+        
+        print(f"Append operation completed for {table_name}")
+        print(f"Source: {source_table}")
+        print(f"Target: {target_table}")
+        return "PROCESSED"
+    except Exception as e:
+        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        return "FAILED"
 
 def update_source_metadata(tables_to_append, append_results):
     try:
@@ -26,7 +51,7 @@ def update_source_metadata(tables_to_append, append_results):
         
         # Add new columns and transform existing ones
         updated_metadata = filtered_metadata.select(
-            col("id"),  # Use existing id instead of generating a new one
+            col("id"),
             lit("bk_mpo").alias("project_name"),
             col("file_name"),
             col("file_path"),
@@ -70,7 +95,40 @@ def update_source_metadata(tables_to_append, append_results):
             # If the table doesn't exist, raise an error
             raise Exception(f"Target table {target_table_path} does not exist. Please create the table before running this operation.")
     except Exception as e:
-        print(f"Unexpected error occurred while updating metadata: {str(e)}")
+        error_message = f"Unexpected error occurred while updating metadata: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
         raise
 
-# ... [rest of the code remains the same]
+# Main execution
+append_results = []
+overall_status = "SUCCESS"
+
+# Perform append operation for each table in the list
+for table in tables_to_append:
+    try:
+        status = append_and_update_metadata(table)
+        append_results.append((table, status))
+        if status == "FAILED":
+            overall_status = "PARTIAL_FAILURE"
+    except Exception as e:
+        error_message = f"Failed to process table {table}: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        append_results.append((table, "FAILED"))
+        overall_status = "PARTIAL_FAILURE"
+
+# Update source metadata
+try:
+    update_source_metadata(tables_to_append, append_results)
+except Exception as e:
+    error_message = f"Failed to update source metadata: {str(e)}\n{traceback.format_exc()}"
+    print(error_message)
+    overall_status = "FAILURE"
+
+print(f"Append operations and metadata updates completed. Overall status: {overall_status}")
+
+if overall_status != "SUCCESS":
+    error_summary = f"Job completed with status: {overall_status}. Check the logs for detailed error messages."
+    print(error_summary)
+    dbutils.notebook.exit(error_summary)
+else:
+    dbutils.notebook.exit("SUCCESS")
