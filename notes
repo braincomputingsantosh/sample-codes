@@ -42,9 +42,10 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             # Read the source table
             source_df = spark.table(f"staging.bk_mpo_raw.{table}")
             
-            # Filter for the specific file path and year/month
-            file_path_pattern = f"/Volumes/staging/bk_mpo_raw/landing/{table.lower()}/{source_year}/{source_month}/"
-            filtered_df = source_df.filter(col("source_metadata.file_path").like(f"{file_path_pattern}%"))
+            # Simplified file path pattern for HELOC and LOAN_MONTH_LOSS_MIT
+            file_path_pattern = f"/{source_year}/{source_month}"
+            
+            filtered_df = source_df.filter(col("source_metadata.file_path").contains(file_path_pattern))
             
             # If no matching records, log and continue to next table
             if filtered_df.count() == 0:
@@ -88,7 +89,7 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
 # Example usage
 if __name__ == "__main__":
     spark = SparkSession.builder.appName("MetadataProcessor").getOrCreate()
-    source_tables = ["LOAN_MONTH", "HELOC"]
+    source_tables = ["LOAN_MONTH", "HELOC", "LOAN_MONTH_LOSS_MIT"]
     target_table = "test_bk_mpo.source_metadata_new"
     source_year = "2024"
     source_month = "04"  # April
