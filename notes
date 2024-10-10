@@ -1,4 +1,4 @@
-from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, coalesce
 import traceback
 
 def update_source_metadata(tables_to_append):
@@ -29,7 +29,8 @@ def update_source_metadata(tables_to_append):
             lit("PROCESSED").alias("file_process_state"),
             current_timestamp().alias("process_start_dtm"),
             current_timestamp().alias("process_end_dtm"),
-            col("file_block_length").alias("file_size")
+            # Use coalesce to handle potential missing columns
+            coalesce(col("file_size"), col("file_block_length")).alias("file_size")
         )
         
         # Define the target table path
