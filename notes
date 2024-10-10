@@ -1,7 +1,8 @@
-from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, coalesce
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, when
+from pyspark.sql.types import StringType
 import traceback
 
-def update_source_metadata(tables_to_append):
+def update_source_metadata(tables_to_append, append_results):
     try:
         print(f"Starting metadata update for tables: {', '.join(tables_to_append)}")
         
@@ -18,6 +19,17 @@ def update_source_metadata(tables_to_append):
             print(f"No metadata found for tables: {', '.join(tables_to_append)}")
             return
         
+        # Create a dictionary to map table names to their process states
+        table_status = {table: status for table, status in append_results}
+        
+        def get_process_state(file_name):
+            for table, status in table_status.items():
+                if table.lower() in file_name.lower():
+                    return status
+            return "UNKNOWN"
+        
+        get_process_state_udf = udf(get_process_state, StringType())
+        
         # Add new columns and transform existing ones
         updated_metadata = filtered_metadata.select(
             col("id"),
@@ -26,11 +38,10 @@ def update_source_metadata(tables_to_append):
             col("file_path"),
             current_timestamp().alias("process_date"),
             regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
-            lit("PROCESSED").alias("file_process_state"),
+            get_process_state_udf(col("file_name")).alias("file_process_state"),
             current_timestamp().alias("process_start_dtm"),
             current_timestamp().alias("process_end_dtm"),
-            # Use coalesce to handle potential missing columns
-            coalesce(col("file_size"), col("file_block_length")).alias("file_size")
+            col("file_size")
         )
         
         # Define the target table path
@@ -43,18 +54,37 @@ def update_source_metadata(tables_to_append):
         print(f"Metadata updated in {target_table_path}")
         print(f"Number of records processed: {updated_metadata.count()}")
         
+        # Log status for each table
+        for table, status in append_results:
+            print(f"Table {table}: {status}")
+        
     except Exception as e:
         error_message = f"Error updating metadata: {str(e)}\n{traceback.format_exc()}"
         print(error_message)
         raise
 
 # Example usage in main execution
+append_results = []
+overall_status = "SUCCESS"
+
+# Perform append operation for each table in the list
+for table in tables_to_append:
+    try:
+        # Your append logic here
+        status = "PROCESSED"  # Replace with actual append logic result
+        append_results.append((table, status))
+    except Exception as e:
+        print(f"Failed to process table {table}: {str(e)}")
+        append_results.append((table, "FAILED"))
+        overall_status = "PARTIAL_FAILURE"
+
+# Update source metadata
 try:
-    update_source_metadata(tables_to_append)
+    update_source_metadata(tables_to_append, append_results)
     print("Metadata update completed successfully.")
 except Exception as e:
     print(f"Failed to update source metadata: {str(e)}")
-    dbutils.notebook.exit("FAILURE: Metadata update failed")
+    overall_status = "FAILURE"
 
-print("All operations completed.")
-dbutils.notebook.exit("SUCCESS")
+print(f"All operations completed. Overall status: {overall_status}")
+dbutils.notebook.exit(overall_status)
