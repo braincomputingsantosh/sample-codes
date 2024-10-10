@@ -1,5 +1,5 @@
 from pyspark.sql.functions import current_timestamp, col, lit, regexp_extract, udf
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 import traceback
 import uuid
 
@@ -8,16 +8,24 @@ generate_uuid = udf(lambda: str(uuid.uuid4()), StringType())
 
 def update_source_metadata(tables_to_append, append_results, target_year, target_month):
     try:
+        # Define the schema for the target metadata table
+        target_schema = StructType([
+            StructField("id", StringType(), True),
+            StructField("project_name", StringType(), True),
+            StructField("file_name", StringType(), True),
+            StructField("file_path", StringType(), True),
+            StructField("process_date", TimestampType(), True),
+            StructField("file_type", StringType(), True),
+            StructField("file_process_state", StringType(), True),
+            StructField("process_start_dtm", TimestampType(), True),
+            StructField("process_end_dtm", TimestampType(), True),
+            StructField("file_size", StringType(), True)
+        ])
+
         all_updated_metadata = []
 
         # Safely create table_status dictionary
-        table_status = {}
-        for result in append_results:
-            if isinstance(result, tuple) and len(result) == 2:
-                table, status = result
-                table_status[table] = status
-            else:
-                print(f"Warning: Unexpected format in append_results: {result}")
+        table_status = {table: status for table, status in append_results if isinstance(status, str)}
 
         for table in tables_to_append:
             print(f"Processing metadata for table: {table}")
@@ -56,7 +64,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                 
                 # Add new columns and transform existing ones
                 updated_metadata = filtered_metadata.select(
-                    generate_uuid().alias("id"),  # Generate new UUID for each record
+                    generate_uuid().alias("id"),
                     lit("bk_mpo").alias("project_name"),
                     col("file_name"),
                     col("file_path"),
@@ -84,11 +92,17 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
         for df in all_updated_metadata[1:]:
             combined_metadata = combined_metadata.union(df)
         
+        # Create a temporary view with the correct schema
+        combined_metadata.select(target_schema.fieldNames()).createOrReplaceTempView("temp_metadata_view")
+        
         # Define the target table
         target_table_path = f"{target_metadata_schema}.{target_metadata_table}"
         
-        # Append the updated metadata to the target table
-        combined_metadata.write.mode("append").saveAsTable(target_table_path)
+        # Insert the data from the temporary view into the target table
+        spark.sql(f"""
+        INSERT INTO {target_table_path}
+        SELECT * FROM temp_metadata_view
+        """)
         
         # Log processing results
         print(f"Metadata updated in {target_table_path}")
