@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, monotonically_increasing_id, from_json, col
+from pyspark.sql.functions import current_timestamp, lit, monotonically_increasing_id, from_json, col, to_timestamp
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 import logging
 
@@ -38,7 +38,7 @@ def process_metadata(spark, source_tables, target_table):
         
         try:
             # Read the source table
-            source_df = spark.table(f"bk_mpo_raw.{table}")
+            source_df = spark.table(f"staging.bk_mpo_raw.{table}")
             
             # Extract metadata from the JSON column
             metadata_df = source_df.select(
@@ -47,10 +47,10 @@ def process_metadata(spark, source_tables, target_table):
             ).select(
                 "source_table",
                 col("json_data.file_name").alias("file_name"),
-                col("json_data.file_size").alias("file_size"),
+                col("json_data.file_size").cast(StringType()).alias("file_size"),
                 col("json_data.file_path").alias("file_path"),
-                col("json_data.file_block_length").alias("file_block_length"),
-                lit("").alias("file_type"),  # Assuming file_type is not in the JSON, adjust if needed
+                col("json_data.file_block_length").cast(StringType()).alias("file_block_length"),
+                lit("").alias("file_type"),
                 current_timestamp().alias("processed_time")
             )
             
@@ -65,7 +65,7 @@ def process_metadata(spark, source_tables, target_table):
             logger.error(f"Error processing table {table}: {str(e)}")
     
     # Add monotonically increasing ID
-    result_df = result_df.withColumn("id", monotonically_increasing_id())
+    result_df = result_df.withColumn("id", monotonically_increasing_id().cast(StringType()))
     
     # Persist the data to the specified target table
     try:
@@ -80,7 +80,7 @@ def process_metadata(spark, source_tables, target_table):
 # Example usage
 if __name__ == "__main__":
     spark = SparkSession.builder.appName("MetadataProcessor").getOrCreate()
-    source_tables = ["LOAN_MONTH", "HELOC"]  # Add more tables as needed
-    target_table = "test_bk_mpo.source_metadata_new"  # Specify your target table here
+    source_tables = ["LOAN_MONTH", "HELOC"]
+    target_table = "test_bk_mpo.source_metadata_new"
     result = process_metadata(spark, source_tables, target_table)
     result.show()
