@@ -1,80 +1,8 @@
-# Databricks notebook source
-# MAGIC %md
-# MAGIC # Merge Operation Notebook with Seed-based ID Generation and Metadata Update (Job Version)
-
-# COMMAND ----------
-
-# Job parameters
-dbutils.widgets.text("current_year", "2024", "Current Year")
-dbutils.widgets.text("current_month", "07", "Current Month")
-
-current_year = dbutils.widgets.get("current_year")
-current_month = dbutils.widgets.get("current_month")
-
-# List of tables that need merge operation
-tables_to_merge = ['customer_data', 'transaction_history', 'product_catalog']
-
-# Source schema name
-source_schema_name = 'bk_hpi_raw'
-
-# Target schema name
-target_schema_name = 'bk_hpi_processed'
-
-# Metadata schemas and tables
-source_metadata_table = 'source_metadata'
-target_metadata_schema = 'bk_mpo'
-target_metadata_table = 'source_meta_data'
-
-print(f"Job will process data for Year: {current_year}, Month: {current_month}")
-
-# COMMAND ----------
-
-from pyspark.sql.functions import current_timestamp, col, regexp_extract, monotonically_increasing_id, coalesce, max
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, lower
 from pyspark.sql.utils import AnalysisException, ParseException
-from delta.tables import DeltaTable
+import re
 
-def merge_records_with_seed_id(table_name):
-    try:
-        # Construct full table names
-        source_table = f"{source_schema_name}.{table_name}"
-        target_table = f"{target_schema_name}.{table_name}"
-        
-        # Read the source table
-        source_df = spark.table(source_table)
-        
-        # Assuming the target table is a Delta table
-        target_delta_table = DeltaTable.forName(spark, target_table)
-        
-        # Get the maximum ID from the target table
-        max_id = target_delta_table.toDF().agg(coalesce(max("id"), lit(0)).alias("max_id")).collect()[0]["max_id"]
-        
-        # Add a monotonically increasing ID to the source dataframe, offset by the max_id
-        source_df_with_id = source_df.withColumn("id", monotonically_increasing_id() + max_id + 1)
-        
-        # Perform the merge operation
-        (target_delta_table.alias("target")
-         .merge(
-             source_df_with_id.alias("source"),
-             "target.natural_key = source.natural_key"  # Assume 'natural_key' is the matching key
-         )
-         .whenMatchedUpdateAll()
-         .whenNotMatchedInsertAll()
-         .execute())
-        
-        print(f"Merge operation completed for {table_name}")
-        print(f"Source: {source_table}")
-        print(f"Target: {target_table}")
-    except AnalysisException as e:
-        print(f"Error: Table not found or invalid schema - {str(e)}")
-        raise
-    except ParseException as e:
-        print(f"Error: Invalid SQL or DataFrame operation - {str(e)}")
-        raise
-    except Exception as e:
-        print(f"Unexpected error occurred while merging {table_name}: {str(e)}")
-        raise
-
-def update_source_metadata():
+def update_source_metadata(tables_to_append):
     try:
         # Read source metadata
         source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
@@ -92,17 +20,30 @@ def update_source_metadata():
             (col("extracted_month") == current_month)
         )
         
-        # Read target metadata table
-        target_metadata_df = spark.table(f"{target_metadata_schema}.{target_metadata_table}")
+        # Create an empty DataFrame to store the results
+        result_metadata = spark.createDataFrame([], filtered_metadata.schema)
+        
+        # For each table, filter the metadata and union the results
+        for table in tables_to_append:
+            # Create a case-insensitive regex pattern for the table name
+            table_pattern = re.compile(f'.*{re.escape(table)}.*', re.IGNORECASE)
+            
+            # Use the regex pattern to filter the metadata
+            table_metadata = filtered_metadata.filter(
+                col("file_name").rlike(table_pattern.pattern)
+            )
+            
+            # Union with the result DataFrame
+            result_metadata = result_metadata.union(table_metadata)
+        
+        # Add update timestamp
+        result_metadata = result_metadata.withColumn("metadata_updated_at", current_timestamp())
         
         # Append filtered metadata to target
-        updated_metadata = target_metadata_df.union(filtered_metadata.drop("extracted_year", "extracted_month"))
-        
-        # Write updated metadata back to target table
-        updated_metadata.write.mode("overwrite").saveAsTable(f"{target_metadata_schema}.{target_metadata_table}")
+        result_metadata.write.mode("append").saveAsTable(f"{target_metadata_schema}.{target_metadata_table}")
         
         print(f"Metadata updated in {target_metadata_schema}.{target_metadata_table}")
-        print(f"Filtered for year: {current_year}, month: {current_month}")
+        print(f"Filtered for year: {current_year}, month: {current_month}, and tables: {', '.join(tables_to_append)}")
     except AnalysisException as e:
         print(f"Error: Metadata table not found or invalid schema - {str(e)}")
         raise
@@ -113,24 +54,22 @@ def update_source_metadata():
         print(f"Unexpected error occurred while updating metadata: {str(e)}")
         raise
 
-# COMMAND ----------
+# ... [rest of the code remains the same]
 
-# Perform merge operation for each table in the list
-for table in tables_to_merge:
+# Perform append operation for each table in the list
+for table in tables_to_append:
     try:
-        merge_records_with_seed_id(table)
+        append_and_update_metadata(table)
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
         dbutils.notebook.exit(f"Failed to process table {table}")
 
 # Update source metadata
 try:
-    update_source_metadata()
+    update_source_metadata(tables_to_append)
 except Exception as e:
     print(f"Failed to update source metadata: {str(e)}")
     dbutils.notebook.exit("Failed to update source metadata")
 
-# COMMAND ----------
-
-print("All merge operations and metadata updates completed successfully.")
+print("All append operations and metadata updates completed successfully.")
 dbutils.notebook.exit("SUCCESS")
