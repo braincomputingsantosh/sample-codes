@@ -6,6 +6,15 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
     try:
         all_updated_metadata = []
 
+        # Safely create table_status dictionary
+        table_status = {}
+        for result in append_results:
+            if isinstance(result, tuple) and len(result) == 2:
+                table, status = result
+                table_status[table] = status
+            else:
+                print(f"Warning: Unexpected format in append_results: {result}")
+
         for table in tables_to_append:
             print(f"Processing metadata for table: {table}")
             
@@ -39,7 +48,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                     continue
                 
                 # Get the process state for this table
-                table_status = dict(append_results).get(table, "UNKNOWN")
+                table_status_value = table_status.get(table, "UNKNOWN")
                 
                 # Add new columns and transform existing ones
                 updated_metadata = filtered_metadata.select(
@@ -49,7 +58,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
                     col("file_path"),
                     current_timestamp().alias("process_date"),
                     regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
-                    lit(table_status).alias("file_process_state"),
+                    lit(table_status_value).alias("file_process_state"),
                     current_timestamp().alias("process_start_dtm"),
                     current_timestamp().alias("process_end_dtm"),
                     col("file_size").cast(StringType()).alias("file_size")
@@ -82,7 +91,7 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
         print(f"Total number of records processed: {combined_metadata.count()}")
         
         # Log status for each table
-        for table, status in append_results:
+        for table, status in table_status.items():
             print(f"Table {table}: {status}")
         
     except Exception as e:
@@ -90,4 +99,17 @@ def update_source_metadata(tables_to_append, append_results, target_year, target
         print(error_message)
         raise
 
-# Example usage remains the same as before
+# Example usage
+tables_to_append = ['heloc', 'loan_month', 'loan_month_last_mit']
+append_results = [('heloc', 'PROCESSED'), ('loan_month', 'PROCESSED'), ('loan_month_last_mit', 'PROCESSED')]
+target_year = "2024"
+target_month = "04"
+
+try:
+    update_source_metadata(tables_to_append, append_results, target_year, target_month)
+    print("Metadata update completed successfully.")
+except Exception as e:
+    print(f"Failed to update source metadata: {str(e)}")
+    print("Overall status: FAILURE")
+
+print("All operations completed.")
