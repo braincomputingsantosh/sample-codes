@@ -1,6 +1,6 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC # Merge (Upsert) Operation Notebook with Metadata Update (Job Version)
+# MAGIC # Merge Operation Notebook with Seed-based ID Generation and Metadata Update (Job Version)
 
 # COMMAND ----------
 
@@ -29,11 +29,11 @@ print(f"Job will process data for Year: {current_year}, Month: {current_month}")
 
 # COMMAND ----------
 
-from pyspark.sql.functions import current_timestamp, col, regexp_extract
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, monotonically_increasing_id, coalesce, max
 from pyspark.sql.utils import AnalysisException, ParseException
 from delta.tables import DeltaTable
 
-def merge_records(table_name):
+def merge_records_with_seed_id(table_name):
     try:
         # Construct full table names
         source_table = f"{source_schema_name}.{table_name}"
@@ -45,11 +45,17 @@ def merge_records(table_name):
         # Assuming the target table is a Delta table
         target_delta_table = DeltaTable.forName(spark, target_table)
         
+        # Get the maximum ID from the target table
+        max_id = target_delta_table.toDF().agg(coalesce(max("id"), lit(0)).alias("max_id")).collect()[0]["max_id"]
+        
+        # Add a monotonically increasing ID to the source dataframe, offset by the max_id
+        source_df_with_id = source_df.withColumn("id", monotonically_increasing_id() + max_id + 1)
+        
         # Perform the merge operation
         (target_delta_table.alias("target")
          .merge(
-             source_df.alias("source"),
-             "target.id = source.id"  # Assume 'id' is the matching key
+             source_df_with_id.alias("source"),
+             "target.natural_key = source.natural_key"  # Assume 'natural_key' is the matching key
          )
          .whenMatchedUpdateAll()
          .whenNotMatchedInsertAll()
@@ -112,7 +118,7 @@ def update_source_metadata():
 # Perform merge operation for each table in the list
 for table in tables_to_merge:
     try:
-        merge_records(table)
+        merge_records_with_seed_id(table)
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
         dbutils.notebook.exit(f"Failed to process table {table}")
