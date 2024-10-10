@@ -8,6 +8,9 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 def process_metadata(spark, source_tables, target_table, source_year, source_month):
+    # Ensure source_month is a two-digit string
+    source_month = f"{int(source_month):02d}"
+    
     logger.info(f"Starting metadata processing. Target table: {target_table}, Year: {source_year}, Month: {source_month}")
     
     # Define the schema for the new table
@@ -41,12 +44,12 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             source_df = spark.table(f"staging.bk_mpo_raw.{table}")
             
             # Filter for the specific file path and year/month
-            file_path_pattern = f"/Volumes/staging/bk_mpo_raw/landing/{table.lower()}/{source_year}/{source_month:02d}/"
+            file_path_pattern = f"/Volumes/staging/bk_mpo_raw/landing/{table.lower()}/{source_year}/{source_month}/"
             filtered_df = source_df.filter(col("source_metadata.file_path").like(f"{file_path_pattern}%"))
             
             # If no matching records, log and continue to next table
             if filtered_df.count() == 0:
-                logger.warning(f"No matching records found for {table} in {source_year}/{source_month:02d}")
+                logger.warning(f"No matching records found for {table} in {source_year}/{source_month}")
                 continue
             
             # Extract metadata from the JSON column
@@ -69,7 +72,7 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             # Append to the result DataFrame
             result_df = result_df.union(unique_metadata)
             
-            logger.info(f"Processed {table} successfully for {source_year}/{source_month:02d}")
+            logger.info(f"Processed {table} successfully for {source_year}/{source_month}")
         except Exception as e:
             logger.error(f"Error processing table {table}: {str(e)}")
     
@@ -91,7 +94,7 @@ if __name__ == "__main__":
     spark = SparkSession.builder.appName("MetadataProcessor").getOrCreate()
     source_tables = ["LOAN_MONTH", "HELOC"]
     target_table = "test_bk_mpo.source_metadata_new"
-    source_year = 2024
-    source_month = 2  # February
+    source_year = "2024"
+    source_month = "02"  # February
     result = process_metadata(spark, source_tables, target_table, source_year, source_month)
     result.show()
