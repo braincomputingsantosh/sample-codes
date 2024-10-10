@@ -1,75 +1,110 @@
-from pyspark.sql.functions import current_timestamp, col, regexp_extract, lower
-from pyspark.sql.utils import AnalysisException, ParseException
-import re
+from pyspark.sql.functions import current_timestamp, col, regexp_extract, lit, when, udf
+from pyspark.sql.types import StringType
+import uuid
+from datetime import datetime
 
-def update_source_metadata(tables_to_append):
+def generate_uuid():
+    return str(uuid.uuid4())
+
+generate_uuid_udf = udf(generate_uuid, StringType())
+
+def append_and_update_metadata(table_name):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Add metadata
+        source_df = source_df.withColumn("appended_at", current_timestamp())
+        
+        # Append the data to the target table
+        source_df.write.mode("append").saveAsTable(target_table)
+        
+        print(f"Append operation completed for {table_name}")
+        print(f"Source: {source_table}")
+        print(f"Target: {target_table}")
+        return "PROCESSED"
+    except Exception as e:
+        print(f"Error appending {table_name}: {str(e)}")
+        return "FAILED"
+
+def update_source_metadata(tables_to_append, append_results):
     try:
         # Read source metadata
         source_metadata_df = spark.table(f"{source_schema_name}.{source_metadata_table}")
         
-        # Extract year and month from file_name column
-        source_metadata_df = source_metadata_df.withColumn(
-            "extracted_year", regexp_extract(col("file_name"), r"/(\d{4})/", 1)
-        ).withColumn(
-            "extracted_month", regexp_extract(col("file_name"), r"/(\d{2})/McDashCore", 1)
-        )
-        
-        # Filter rows based on the current year and month
+        # Filter rows based on the tables_to_append
         filtered_metadata = source_metadata_df.filter(
-            (col("extracted_year") == current_year) &
-            (col("extracted_month") == current_month)
+            col("file_name").rlike("|".join(tables_to_append))
         )
         
-        # Create an empty DataFrame to store the results
-        result_metadata = spark.createDataFrame([], filtered_metadata.schema)
+        # Create a dictionary to map table names to their process states
+        table_status = {table: status for table, status in append_results}
         
-        # For each table, filter the metadata and union the results
-        for table in tables_to_append:
-            # Create a case-insensitive regex pattern for the table name
-            table_pattern = re.compile(f'.*{re.escape(table)}.*', re.IGNORECASE)
-            
-            # Use the regex pattern to filter the metadata
-            table_metadata = filtered_metadata.filter(
-                col("file_name").rlike(table_pattern.pattern)
-            )
-            
-            # Union with the result DataFrame
-            result_metadata = result_metadata.union(table_metadata)
+        def get_process_state(file_name):
+            for table, status in table_status.items():
+                if table.lower() in file_name.lower():
+                    return status
+            return "UNKNOWN"
         
-        # Add update timestamp
-        result_metadata = result_metadata.withColumn("metadata_updated_at", current_timestamp())
+        get_process_state_udf = udf(get_process_state, StringType())
         
-        # Append filtered metadata to target
-        result_metadata.write.mode("append").saveAsTable(f"{target_metadata_schema}.{target_metadata_table}")
+        # Add new columns and transform existing ones
+        updated_metadata = filtered_metadata.select(
+            generate_uuid_udf().alias("id"),
+            lit("bk_mpo").alias("project_name"),
+            col("file_name"),
+            col("file_path"),
+            current_timestamp().alias("process_date"),
+            regexp_extract(col("file_name"), r"\.(\w+)$", 1).alias("file_type"),
+            get_process_state_udf(col("file_name")).alias("file_process_state"),
+            current_timestamp().alias("process_start_dtm"),
+            current_timestamp().alias("process_end_dtm"),
+            col("file_block_length").alias("file_size")
+        )
         
-        print(f"Metadata updated in {target_metadata_schema}.{target_metadata_table}")
-        print(f"Filtered for year: {current_year}, month: {current_month}, and tables: {', '.join(tables_to_append)}")
-    except AnalysisException as e:
-        print(f"Error: Metadata table not found or invalid schema - {str(e)}")
-        raise
-    except ParseException as e:
-        print(f"Error: Invalid SQL or DataFrame operation in metadata update - {str(e)}")
-        raise
+        # Append updated metadata to target
+        updated_metadata.write.mode("append").saveAsTable(f"{target_metadata_schema}.source_metadata_new")
+        
+        # Log processing results
+        success_count = updated_metadata.filter(col("file_process_state") == "PROCESSED").count()
+        failed_count = updated_metadata.filter(col("file_process_state") == "FAILED").count()
+        print(f"Metadata updated in {target_metadata_schema}.source_metadata_new")
+        print(f"Processed tables: {', '.join(tables_to_append)}")
+        print(f"Successfully processed files: {success_count}")
+        print(f"Failed files: {failed_count}")
+        
+        if failed_count > 0:
+            print("Warning: Some files failed to process. Check the logs for details.")
     except Exception as e:
         print(f"Unexpected error occurred while updating metadata: {str(e)}")
         raise
 
-# ... [rest of the code remains the same]
+# Main execution
+append_results = []
+overall_status = "SUCCESS"
 
 # Perform append operation for each table in the list
 for table in tables_to_append:
     try:
-        append_and_update_metadata(table)
+        status = append_and_update_metadata(table)
+        append_results.append((table, status))
+        if status == "FAILED":
+            overall_status = "PARTIAL_FAILURE"
     except Exception as e:
         print(f"Failed to process table {table}: {str(e)}")
-        dbutils.notebook.exit(f"Failed to process table {table}")
+        append_results.append((table, "FAILED"))
+        overall_status = "PARTIAL_FAILURE"
 
 # Update source metadata
 try:
-    update_source_metadata(tables_to_append)
+    update_source_metadata(tables_to_append, append_results)
 except Exception as e:
     print(f"Failed to update source metadata: {str(e)}")
-    dbutils.notebook.exit("Failed to update source metadata")
+    overall_status = "FAILURE"
 
-print("All append operations and metadata updates completed successfully.")
-dbutils.notebook.exit("SUCCESS")
+print(f"Append operations and metadata updates completed. Overall status: {overall_status}")
+dbutils.notebook.exit(overall_status)
