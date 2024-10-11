@@ -8,8 +8,11 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def process_metadata(spark, source_tables, target_table, default_year, default_month):
-    logger.info(f"Starting metadata processing. Target table: {target_table}")
+def process_metadata(spark, source_tables, target_table, source_year, source_month):
+    # Ensure source_month is a two-digit string
+    source_month = f"{int(source_month):02d}"
+    
+    logger.info(f"Starting metadata processing. Target table: {target_table}, Year: {source_year}, Month: {source_month}")
     
     # Define the schema for the new table
     new_schema = StructType([
@@ -26,6 +29,9 @@ def process_metadata(spark, source_tables, target_table, default_year, default_m
         StructField("month", StringType(), True)
     ])
     
+    # Initialize an empty DataFrame with the new schema
+    result_df = spark.createDataFrame([], new_schema)
+    
     # Get the maximum ID from the target table
     try:
         max_id = spark.table(target_table).agg(max("id")).collect()[0][0]
@@ -41,8 +47,21 @@ def process_metadata(spark, source_tables, target_table, default_year, default_m
             # Read the source table
             source_df = spark.table(f"staging.bk_mpo_raw.{table}")
             
+            # Filter for the specific year/month
+            if table == "LOAN_MONTH":
+                file_path_pattern = f"/Volumes/staging/bk_mpo_raw/landing/loan_month_mc_dash/{source_year}/"
+            else:
+                file_path_pattern = f"/{source_year}/{source_month}"
+            
+            filtered_df = source_df.filter(col("source_metadata.file_path").contains(file_path_pattern))
+            
+            # If no matching records, log and continue to next table
+            if filtered_df.count() == 0:
+                logger.warning(f"No matching records found for {table} in {source_year}/{source_month}")
+                continue
+            
             # Extract metadata from the STRUCT column
-            metadata_df = source_df.select(
+            metadata_df = filtered_df.select(
                 (monotonically_increasing_id() + id_offset).alias("id"),
                 lit("bk_mpo").alias("project_name"),
                 lit(table).cast(StringType()).alias("source_table"),
@@ -57,61 +76,65 @@ def process_metadata(spark, source_tables, target_table, default_year, default_m
             # Extract year and month from file path for LOAN_MONTH table
             if table == "LOAN_MONTH":
                 metadata_df = metadata_df.withColumn("year", regexp_extract(col("file_path"), r"/(\d{4})/", 1))
-                metadata_df = metadata_df.withColumn("month", regexp_extract(col("file_path"), r"LoanMonth_(\d)\d{2}", 1))
+                metadata_df = metadata_df.withColumn("month", regexp_extract(col("file_name"), r"LoanMonth_(\d)\d{2}", 1))
             else:
-                metadata_df = metadata_df.withColumn("year", lit(default_year))
-                metadata_df = metadata_df.withColumn("month", lit(default_month))
+                metadata_df = metadata_df.withColumn("year", lit(source_year))
+                metadata_df = metadata_df.withColumn("month", lit(source_month))
             
             # Get one unique record
             unique_metadata = metadata_df.limit(1)
             
-            # Perform upsert operation
-            try:
-                # Create a DeltaTable object
-                delta_table = DeltaTable.forName(spark, target_table)
-                
-                # Perform the merge operation
-                delta_table.alias("target").merge(
-                    unique_metadata.alias("updates"),
-                    "target.source_table = updates.source_table AND target.file_path = updates.file_path"
-                ).whenMatchedUpdate(set={
-                    "file_name": "updates.file_name",
-                    "file_extension": "updates.file_extension",
-                    "file_block_length": "updates.file_block_length",
-                    "file_type": "updates.file_type",
-                    "processed_time": "updates.processed_time",
-                    "year": "updates.year",
-                    "month": "updates.month"
-                }).whenNotMatchedInsert(values={
-                    "id": "updates.id",
-                    "project_name": "updates.project_name",
-                    "source_table": "updates.source_table",
-                    "file_name": "updates.file_name",
-                    "file_path": "updates.file_path",
-                    "file_extension": "updates.file_extension",
-                    "file_block_length": "updates.file_block_length",
-                    "file_type": "updates.file_type",
-                    "processed_time": "updates.processed_time",
-                    "year": "updates.year",
-                    "month": "updates.month"
-                }).execute()
-                
-                logger.info(f"Data successfully upserted to {target_table} for {table}")
-            except Exception as e:
-                logger.error(f"Error upserting data to {target_table} for {table}: {str(e)}")
+            # Append to the result DataFrame
+            result_df = result_df.union(unique_metadata)
             
+            logger.info(f"Processed {table} successfully for {source_year}/{source_month}")
         except Exception as e:
             logger.error(f"Error processing table {table}: {str(e)}")
     
+    # Perform upsert operation
+    try:
+        # Create a DeltaTable object
+        delta_table = DeltaTable.forName(spark, target_table)
+        
+        # Perform the merge operation
+        delta_table.alias("target").merge(
+            result_df.alias("updates"),
+            "target.source_table = updates.source_table AND target.file_path = updates.file_path"
+        ).whenMatchedUpdate(set={
+            "file_name": "updates.file_name",
+            "file_extension": "updates.file_extension",
+            "file_block_length": "updates.file_block_length",
+            "file_type": "updates.file_type",
+            "processed_time": "updates.processed_time",
+            "year": "updates.year",
+            "month": "updates.month"
+        }).whenNotMatchedInsert(values={
+            "id": "updates.id",
+            "project_name": "updates.project_name",
+            "source_table": "updates.source_table",
+            "file_name": "updates.file_name",
+            "file_path": "updates.file_path",
+            "file_extension": "updates.file_extension",
+            "file_block_length": "updates.file_block_length",
+            "file_type": "updates.file_type",
+            "processed_time": "updates.processed_time",
+            "year": "updates.year",
+            "month": "updates.month"
+        }).execute()
+        
+        logger.info(f"Data successfully upserted to {target_table}")
+    except Exception as e:
+        logger.error(f"Error upserting data to {target_table}: {str(e)}")
+    
     logger.info("Metadata processing completed")
-    return spark.table(target_table)
+    return result_df
 
 # Example usage
 if __name__ == "__main__":
     spark = SparkSession.builder.appName("MetadataProcessor").getOrCreate()
     source_tables = ["LOAN_MONTH", "HELOC", "LOAN_MONTH_LOSS_MIT"]
     target_table = "test_bk_mpo.source_metadata_new"
-    default_year = "2024"
-    default_month = "04"  # Default month for tables other than LOAN_MONTH
-    result = process_metadata(spark, source_tables, target_table, default_year, default_month)
+    source_year = "2024"
+    source_month = "04"  # April
+    result = process_metadata(spark, source_tables, target_table, source_year, source_month)
     result.show()
