@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, col, monotonically_increasing_id, substring_index, max
+from pyspark.sql.functions import current_timestamp, lit, col, monotonically_increasing_id, substring_index, max, regexp_extract
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType, LongType
 from delta.tables import DeltaTable
 import logging
@@ -8,11 +8,8 @@ import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def process_metadata(spark, source_tables, target_table, source_year, source_month):
-    # Ensure source_month is a two-digit string
-    source_month = f"{int(source_month):02d}"
-    
-    logger.info(f"Starting metadata processing. Target table: {target_table}, Year: {source_year}, Month: {source_month}")
+def process_metadata(spark, source_tables, target_table, default_year, default_month):
+    logger.info(f"Starting metadata processing. Target table: {target_table}")
     
     # Define the schema for the new table
     new_schema = StructType([
@@ -24,7 +21,9 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
         StructField("file_extension", StringType(), True),
         StructField("file_block_length", StringType(), True),
         StructField("file_type", StringType(), True),
-        StructField("processed_time", TimestampType(), True)
+        StructField("processed_time", TimestampType(), True),
+        StructField("year", StringType(), True),
+        StructField("month", StringType(), True)
     ])
     
     # Initialize an empty DataFrame with the new schema
@@ -45,18 +44,8 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             # Read the source table
             source_df = spark.table(f"staging.bk_mpo_raw.{table}")
             
-            # Filter for the specific year/month
-            file_path_pattern = f"/{source_year}/{source_month}"
-            
-            filtered_df = source_df.filter(col("source_metadata.file_path").contains(file_path_pattern))
-            
-            # If no matching records, log and continue to next table
-            if filtered_df.count() == 0:
-                logger.warning(f"No matching records found for {table} in {source_year}/{source_month}")
-                continue
-            
             # Extract metadata from the STRUCT column
-            metadata_df = filtered_df.select(
+            metadata_df = source_df.select(
                 (monotonically_increasing_id() + id_offset).alias("id"),
                 lit("bk_mpo").alias("project_name"),
                 lit(table).cast(StringType()).alias("source_table"),
@@ -68,13 +57,21 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
                 current_timestamp().alias("processed_time")
             )
             
+            # Extract year and month from file path for LOAN_MONTH table
+            if table == "LOAN_MONTH":
+                metadata_df = metadata_df.withColumn("year", regexp_extract(col("file_path"), r"/(\d{4})/", 1))
+                metadata_df = metadata_df.withColumn("month", regexp_extract(col("file_path"), r"LoanMonth_(\d)\d{2}", 1))
+            else:
+                metadata_df = metadata_df.withColumn("year", lit(default_year))
+                metadata_df = metadata_df.withColumn("month", lit(default_month))
+            
             # Get one unique record
             unique_metadata = metadata_df.limit(1)
             
             # Append to the result DataFrame
             result_df = result_df.union(unique_metadata)
             
-            logger.info(f"Processed {table} successfully for {source_year}/{source_month}")
+            logger.info(f"Processed {table} successfully")
         except Exception as e:
             logger.error(f"Error processing table {table}: {str(e)}")
     
@@ -92,7 +89,9 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             "file_extension": "updates.file_extension",
             "file_block_length": "updates.file_block_length",
             "file_type": "updates.file_type",
-            "processed_time": "updates.processed_time"
+            "processed_time": "updates.processed_time",
+            "year": "updates.year",
+            "month": "updates.month"
         }).whenNotMatchedInsert(values={
             "id": "updates.id",
             "project_name": "updates.project_name",
@@ -102,7 +101,9 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
             "file_extension": "updates.file_extension",
             "file_block_length": "updates.file_block_length",
             "file_type": "updates.file_type",
-            "processed_time": "updates.processed_time"
+            "processed_time": "updates.processed_time",
+            "year": "updates.year",
+            "month": "updates.month"
         }).execute()
         
         logger.info(f"Data successfully upserted to {target_table}")
@@ -117,7 +118,7 @@ if __name__ == "__main__":
     spark = SparkSession.builder.appName("MetadataProcessor").getOrCreate()
     source_tables = ["LOAN_MONTH", "HELOC", "LOAN_MONTH_LOSS_MIT"]
     target_table = "test_bk_mpo.source_metadata_new"
-    source_year = "2024"
-    source_month = "04"  # April
-    result = process_metadata(spark, source_tables, target_table, source_year, source_month)
+    default_year = "2024"
+    default_month = "04"  # Default month for tables other than LOAN_MONTH
+    result = process_metadata(spark, source_tables, target_table, default_year, default_month)
     result.show()
