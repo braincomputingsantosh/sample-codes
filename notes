@@ -1,68 +1,41 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, col, monotonically_increasing_id, substring_index, regexp_extract
-from pyspark.sql.types import StructType, StructField, StringType, TimestampType, LongType
-from delta.tables import DeltaTable
-import logging
+# Import necessary libraries
+import json
+from databricks import notebook
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# Set up the parameters
+params = {
+    "tables_to_append": "heloc,loan_amount,loan_month_loss_mit",
+    "source_schema": "bk_mpo_raw",
+    "target_schema": "test_bk_mpo",
+    "source_metadata_table": "source_metadata_new",
+    "target_metadata_schema": "test_bk_mpo",
+    "target_metadata_table": "source_metadata_new",
+    "target_month": "04",
+    "target_year": "2024"
+}
 
-def loan_amount_process_metadata(spark, target_table):
-    logger.info(f"Starting loan amount metadata processing. Target table: {target_table}")
-    
-    # SQL query to get file paths (replace this with your actual query)
-    file_path_query = """
-    -- Your SQL query here
-    """
-    
-    # Execute the query to get file paths
-    file_paths_df = spark.sql(file_path_query)
-    
-    # Process each file path
-    result_df = file_paths_df.select(
-        monotonically_increasing_id().alias("id"),
-        lit("bk_mpo").alias("project_name"),
-        col("file_path"),
-        regexp_extract(col("file_path"), r"/(\d{4})/", 1).alias("year"),
-        regexp_extract(col("file_path"), r"LoanMonth_(\d)\d{2}", 1).alias("month"),
-        substring_index(col("file_path"), "/", -1).alias("file_name"),
-        substring_index(col("file_path"), ".", -1).alias("file_extension"),
-        current_timestamp().alias("processed_time")
-    )
-    
-    # Get the schema of the target table
-    target_schema = spark.table(target_table).schema
-    target_columns = set(field.name for field in target_schema.fields)
-    
-    # Filter the columns in result_df to match the target table
-    update_columns = [col for col in result_df.columns if col in target_columns]
-    
-    # Prepare the update and insert expressions
-    update_expr = {col: f"updates.{col}" for col in update_columns if col != "id"}
-    insert_expr = {col: f"updates.{col}" for col in update_columns}
-    
-    # Perform upsert operation
-    try:
-        delta_table = DeltaTable.forName(spark, target_table)
-        
-        delta_table.alias("target").merge(
-            result_df.alias("updates"),
-            "target.file_path = updates.file_path"
-        ).whenMatchedUpdate(set=update_expr
-        ).whenNotMatchedInsert(values=insert_expr
-        ).execute()
-        
-        logger.info(f"Data successfully upserted to {target_table}")
-    except Exception as e:
-        logger.error(f"Error upserting data to {target_table}: {str(e)}")
-    
-    logger.info("Loan amount metadata processing completed")
-    return result_df
+# Create widgets for each parameter
+for key, value in params.items():
+    dbutils.widgets.text(key, value)
 
-# Example usage
-if __name__ == "__main__":
-    spark = SparkSession.builder.appName("LoanAmountMetadataProcessor").getOrCreate()
-    target_table = "test_bk_mpo.source_metadata_new"
-    result = loan_amount_process_metadata(spark, target_table)
-    result.show()
+# Function to run the notebook
+def run_master_append_job():
+    # Get the values from the widgets
+    params = {key: dbutils.widgets.get(key) for key in params.keys()}
+    
+    # Convert tables_to_append to a list
+    params["tables_to_append"] = params["tables_to_append"].split(',')
+    
+    # Path to your original notebook
+    notebook_path = "/path/to/your/1.MASTER_APPEND_OPERATION"
+    
+    # Run the notebook and capture the output
+    output = notebook.run(notebook_path, timeout_seconds=0, arguments=params)
+    
+    return output
+
+# Run the job and print the output
+result = run_master_append_job()
+print(f"Job Output: {result}")
+
+# You can add more code here to process the result if needed
