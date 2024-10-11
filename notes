@@ -26,9 +26,6 @@ def process_metadata(spark, source_tables, target_table, default_year, default_m
         StructField("month", StringType(), True)
     ])
     
-    # Initialize an empty DataFrame with the new schema
-    result_df = spark.createDataFrame([], new_schema)
-    
     # Get the maximum ID from the target table
     try:
         max_id = spark.table(target_table).agg(max("id")).collect()[0][0]
@@ -68,50 +65,46 @@ def process_metadata(spark, source_tables, target_table, default_year, default_m
             # Get one unique record
             unique_metadata = metadata_df.limit(1)
             
-            # Append to the result DataFrame
-            result_df = result_df.union(unique_metadata)
+            # Perform upsert operation
+            try:
+                # Create a DeltaTable object
+                delta_table = DeltaTable.forName(spark, target_table)
+                
+                # Perform the merge operation
+                delta_table.alias("target").merge(
+                    unique_metadata.alias("updates"),
+                    "target.source_table = updates.source_table AND target.file_path = updates.file_path"
+                ).whenMatchedUpdate(set={
+                    "file_name": "updates.file_name",
+                    "file_extension": "updates.file_extension",
+                    "file_block_length": "updates.file_block_length",
+                    "file_type": "updates.file_type",
+                    "processed_time": "updates.processed_time",
+                    "year": "updates.year",
+                    "month": "updates.month"
+                }).whenNotMatchedInsert(values={
+                    "id": "updates.id",
+                    "project_name": "updates.project_name",
+                    "source_table": "updates.source_table",
+                    "file_name": "updates.file_name",
+                    "file_path": "updates.file_path",
+                    "file_extension": "updates.file_extension",
+                    "file_block_length": "updates.file_block_length",
+                    "file_type": "updates.file_type",
+                    "processed_time": "updates.processed_time",
+                    "year": "updates.year",
+                    "month": "updates.month"
+                }).execute()
+                
+                logger.info(f"Data successfully upserted to {target_table} for {table}")
+            except Exception as e:
+                logger.error(f"Error upserting data to {target_table} for {table}: {str(e)}")
             
-            logger.info(f"Processed {table} successfully")
         except Exception as e:
             logger.error(f"Error processing table {table}: {str(e)}")
     
-    # Perform upsert operation
-    try:
-        # Create a DeltaTable object
-        delta_table = DeltaTable.forName(spark, target_table)
-        
-        # Perform the merge operation
-        delta_table.alias("target").merge(
-            result_df.alias("updates"),
-            "target.source_table = updates.source_table AND target.file_path = updates.file_path"
-        ).whenMatchedUpdate(set={
-            "file_name": "updates.file_name",
-            "file_extension": "updates.file_extension",
-            "file_block_length": "updates.file_block_length",
-            "file_type": "updates.file_type",
-            "processed_time": "updates.processed_time",
-            "year": "updates.year",
-            "month": "updates.month"
-        }).whenNotMatchedInsert(values={
-            "id": "updates.id",
-            "project_name": "updates.project_name",
-            "source_table": "updates.source_table",
-            "file_name": "updates.file_name",
-            "file_path": "updates.file_path",
-            "file_extension": "updates.file_extension",
-            "file_block_length": "updates.file_block_length",
-            "file_type": "updates.file_type",
-            "processed_time": "updates.processed_time",
-            "year": "updates.year",
-            "month": "updates.month"
-        }).execute()
-        
-        logger.info(f"Data successfully upserted to {target_table}")
-    except Exception as e:
-        logger.error(f"Error upserting data to {target_table}: {str(e)}")
-    
     logger.info("Metadata processing completed")
-    return result_df
+    return spark.table(target_table)
 
 # Example usage
 if __name__ == "__main__":
