@@ -1,38 +1,42 @@
-# Temporary Tables in Databricks: An In-depth Analysis
-
-In the rapidly evolving field of data engineering, the utilization of temporary tables has become a critical aspect of data processing and analysis. Databricks, as a leading platform in this domain, offers robust support for temporary tables, enabling data engineers to perform transient operations that are essential for ad hoc analysis and data transformation tasks. This report delves into the intricacies of temporary tables in Databricks, their creation, usage, and best practices, drawing upon the latest information available as of October 11, 2024.
-
-## Creation of Temporary Tables in Databricks
-
-The process of creating temporary tables in Databricks is straightforward and can be accomplished through the Databricks UI or programmatically using SQL or data processing APIs. According to a source, the steps to create a temporary table through the Databricks UI involve selecting the 'Create' button, choosing 'Table', and then specifying 'Temporary' as the table type ([hatchjs.com](https://hatchjs.com/databricks-create-temporary-table/)). The user is then prompted to enter a name for the table, which signifies the completion of the creation process.
-
-For those who prefer a programmatic approach, temporary tables can be created using SQL commands or data processing APIs such as PySpark. An example of such a command is `CREATE OR REPLACE TEMPORARY VIEW temp_employee AS SELECT …`, which creates a temporary view that behaves similarly to a temporary table and exists only for the duration of the Spark session ([unogeeks.com](https://unogeeks.com/databricks-temp-table/)).
-
-## Usage of Temporary Tables
-
-Temporary tables in Databricks serve a variety of purposes, primarily as a means to stage data for intermediate processing or to perform exploratory data analysis without affecting permanent data structures. A discussion on a community forum highlights two common approaches to using temporary structures in Databricks: creating temporary views or creating delta tables with a temporary prefix ([community.databricks.com](https://community.databricks.com/t5/data-engineering/temp-tables-in-databricks/td-p/44012)). While both methods serve the purpose of transient data storage, the choice between them may depend on the specific use case and requirements for data persistence and performance.
-
-## Advantages of Temporary Tables
-
-One of the key advantages of temporary tables is their ephemeral nature. They exist only within the context of a Spark session and do not persist beyond its termination, thereby not consuming long-term storage resources. This makes them ideal for scenarios where data needs to be manipulated temporarily without leaving a footprint in the system's metadata or storage layers.
-
-## Best Practices and Considerations
-
-When working with temporary tables in Databricks, it is important to understand their scope and limitations. As temporary tables are session-scoped, they are not visible to other users or sessions, which can be both an advantage in terms of security and isolation, and a limitation if sharing of the intermediate results is required.
-
-Moreover, it is essential to be aware that all tables created in Databricks default to using Delta Lake, a storage layer that brings reliability, performance, and lifecycle management to data lakes ([docs.databricks.com](https://docs.databricks.com/en/tables/index.html)). While temporary tables do not directly leverage all features of Delta Lake, understanding the underlying storage mechanism is beneficial for optimizing data operations and ensuring compatibility with other components of the Databricks ecosystem.
-
-## Conclusion
-
-In conclusion, temporary tables in Databricks represent a powerful feature for data engineers to perform transient data operations efficiently. Whether through the UI or programmatically, the creation and use of temporary tables are integral to the data processing workflows within Databricks. By adhering to best practices and understanding the nuances of temporary tables and the Delta Lake storage layer, data engineers can leverage these ephemeral structures to their fullest potential, ensuring that data analysis tasks are conducted with both agility and precision.
-
-## References
-
-- "How to Create a Temporary Table in Databricks." Hatchjs.com. Accessed October 11, 2024. [https://hatchjs.com/databricks-create-temporary-table/](https://hatchjs.com/databricks-create-temporary-table/).
-- "How to Use Temporary Tables in Databricks." Castordoc.com. Accessed October 11, 2024. [https://www.castordoc.com/how-to/how-to-use-temporary-tables-in-databricks](https://www.castordoc.com/how-to/how-to-use-temporary-tables-in-databricks).
-- "Temp Tables in Databricks." Community.databricks.com. Accessed October 11, 2024. [https://community.databricks.com/t5/data-engineering/temp-tables-in-databricks/td-p/44012](https://community.databricks.com/t5/data-engineering/temp-tables-in-databricks/td-p/44012).
-- "Streamline Your Data Workflow with Databricks Tables: A Guide." LinkedIn.com. Accessed October 11, 2024. [https://www.linkedin.com/pulse/streamline-your-data-workflow-databricks-tables-guide-hatim](https://www.linkedin.com/pulse/streamline-your-data-workflow-databricks-tables-guide-hatim).
-- "Create Temp Table in Azure Databricks and Insert Lots of Rows." Stackoverflow.com. Accessed October 11, 2024. [https://stackoverflow.com/questions/74607528/create-temp-table-in-azure-databricks-and-insert-lots-of-rows](https://stackoverflow.com/questions/74607528/create-temp-table-in-azure-databricks-and-insert-lots-of-rows).
-- "Database Objects in Databricks." Docs.databricks.com. Accessed October 11, 2024. [https://docs.databricks.com/en/database-objects/index.html](https://docs.databricks.com/en/database-objects/index.html).
-- "Temp Views in Databricks." Unogeeks.com. Accessed October 11, 2024. [https://unogeeks.com/databricks-temp-table/](https://unogeeks.com/databricks-temp-table/).
-- "What is a Table?" Docs.databricks.com. Accessed October 11, 2024. [https://docs.databricks.com/en/tables/index.html](https://docs.databricks.com/en/tables/index.html).
+def append_and_update_metadata(table_name):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Extract year and month from source_metadata
+        from pyspark.sql.functions import from_json, col
+        
+        source_df = source_df.withColumn("metadata", from_json(col("source_metadata"), "MAP<STRING,STRING>"))
+        file_path = source_df.select(col("metadata.file_path")).first()[0]
+        
+        import re
+        year_month_match = re.search(r'/(\d{4})/(\d{2})/', file_path)
+        if year_month_match:
+            year, month = year_month_match.groups()
+        else:
+            raise ValueError("Year and month not found in file path")
+        
+        # Check if data for this year and month exists in target table
+        target_df = spark.table(target_table)
+        existing_data = target_df.filter((col("year") == year) & (col("month") == month))
+        
+        if existing_data.count() == 0:
+            # Data doesn't exist, proceed with append
+            source_df.write.mode("append").saveAsTable(target_table)
+            
+            print(f"Append operation completed for {table_name}")
+            print(f"Source: {source_table}")
+            print(f"Target: {target_table}")
+            return "PROCESSED"
+        else:
+            print(f"Data for year {year} and month {month} already exists in {target_table}. Skipping append.")
+            return "SKIPPED"
+        
+    except Exception as e:
+        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        return "FAILED"
