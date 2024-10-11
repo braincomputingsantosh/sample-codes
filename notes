@@ -1,99 +1,77 @@
-# Databricks notebook source
-from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
+Title: Temporary Tables in Databricks: Efficient Data Handling for Analytics and ETL
 
-# COMMAND ----------
+Introduction
 
-# Initialize Spark session and DBUtils
-spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
-dbutils = DBUtils(spark)
+Definition: Temporary tables in Databricks are volatile data structures used for intermediate data processing.
+Purpose: Facilitate complex queries, data transformations, and improve query performance.
 
-# COMMAND ----------
 
-class ETLProcessor:
-    def __init__(self, spark, source_schema, target_schema):
-        self.spark = spark
-        self.source_schema = source_schema
-        self.target_schema = target_schema
+Types of Temporary Tables
+a. Session-scoped Temporary Views
 
-    def truncate_and_insert_table_data(self, tables):
-        results = []
-        for table_name in tables:
-            try:
-                source_table = f"{self.source_schema}.{table_name}"
-                target_table = f"{self.target_schema}.{table_name}"
-                
-                # Truncate the target table
-                self.spark.sql(f"TRUNCATE TABLE {target_table}")
-                
-                # Read the source table
-                source_df = self.spark.table(source_table)
-                
-                # Insert all records into the target table
-                source_df.write.mode("overwrite").saveAsTable(target_table)
-                
-                print(f"Truncate and insert operation completed for {table_name}")
-                print(f"Source: {source_table}")
-                print(f"Target: {target_table}")
-                results.append((table_name, "SUCCESS"))
-            except Exception as e:
-                error_message = f"Error in truncate and insert operation for {table_name}: {str(e)}"
-                print(error_message)
-                results.append((table_name, error_message))
-        
-        return results
+Visible only within the current Spark session
+Created with: CREATE TEMPORARY VIEW view_name AS SELECT ...
+b. Global Temporary Views
+Visible across all sessions within the same Spark application
+Created with: CREATE GLOBAL TEMPORARY VIEW view_name AS SELECT ...
+Accessed via the global_temp database: SELECT * FROM global_temp.view_name
 
-    def run_etl(self, tables_to_process):
-        insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status in insert_results) else "FAILED"
-        print(f"Overall status: {overall_status}")
-        
-        return insert_results, overall_status
 
-# COMMAND ----------
+Key Characteristics
 
-# Configuration
-dbutils.widgets.text("source_schema", "")
-dbutils.widgets.text("target_schema", "")
-dbutils.widgets.text("tables_to_process", "")
+Lifetime: Exist for the duration of the session or Spark application
+Storage: In-memory or disk-based, depending on size and configuration
+Performance: Can be cached for faster access
+Limitations: No support for indexes, constraints, or triggers
 
-source_schema = dbutils.widgets.get("source_schema")
-target_schema = dbutils.widgets.get("target_schema")
-tables_to_process = dbutils.widgets.get("tables_to_process").split(",")
 
-# Initialize ETLProcessor
-etl_processor = ETLProcessor(spark, source_schema, target_schema)
+Use Cases
 
-# COMMAND ----------
+Intermediate results in complex ETL processes
+Simplifying multi-step analytical queries
+Temporary data sharing across notebooks in the same cluster
+Optimizing performance for frequently accessed subsets of data
 
-# Run ETL process
-results, status = etl_processor.run_etl(tables_to_process)
 
-# COMMAND ----------
+Advantages
 
-# Display results
-for table, result in results:
-    print(f"Table: {table}, Result: {result}")
-print(f"Overall ETL Status: {status}")
+Improved query performance for complex operations
+Reduced data movement and I/O operations
+Simplified code for multi-step data transformations
+Facilitates modular and readable code structure
 
-# COMMAND ----------
 
-# Log completion
-completion_message = f"ETL process completed at {spark.sql('SELECT current_timestamp()').collect()[0][0]} with status: {status}"
-print(completion_message)
+Considerations and Best Practices
 
-# You can also log this message to a logging system if you have one set up
-# log.info(completion_message)
+Use for transient operations, not long-term storage
+Drop views when no longer needed to free resources
+Be mindful of data privacy in shared environments
+Leverage caching for frequently accessed temp views
+Use meaningful names to avoid conflicts
 
-# COMMAND ----------
 
-# Stop the Spark session
-spark.stop()
+Comparison with Permanent Tables
 
-print("Spark session has been terminated. You can now close this notebook.")
+Temp Tables: Faster for intermediate operations, session-scoped
+Permanent Tables: Persistent storage, shareable across sessions and users
 
-# COMMAND ----------
 
-# Databricks notebook exit
-dbutils.notebook.exit(status)
+Integration with Databricks Features
+
+Compatible with Delta Lake operations
+Can be used in Databricks notebooks, jobs, and workflows
+Useful in Structured Streaming for transformations
+
+
+Performance Tips
+
+Use appropriate partitioning for large datasets
+Consider the Databricks Runtime version for optimal performance
+Monitor usage with Spark UI and Databricks observability features
+
+
+Conclusion
+
+Temp tables are powerful tools for efficient data processing in Databricks
+Balance usage between temp and permanent tables based on your use case
+Proper use can significantly optimize your data workflows and query performance
