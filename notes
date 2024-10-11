@@ -38,3 +38,66 @@ Enhance the existing data append function to prevent duplicate entries in the ta
 4.1. Optimize the data existence check to minimize processing time.
 4.2. Consider the impact on overall ETL pipeline performance.
 4.3. Ensure efficient updating of `ingest_time` and `file_path` columns in the target table.
+
+
+
+
+
+-------- Code ---------
+
+from pyspark.sql.functions import col, current_timestamp, from_json
+from pyspark.sql.types import StructType, StringType, TimestampType
+import re
+
+def append_and_update_metadata(table_name):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Extract file_path from source_metadata
+        file_path = source_df.select(col("source_metadata.file_path")).first()[0]
+        
+        # Extract year and month from file_path
+        year_month_match = re.search(r'/(\d{4})/(\d{2})/', file_path)
+        if year_month_match:
+            year, month = year_month_match.groups()
+        else:
+            raise ValueError("Year and month not found in file path")
+        
+        # Check if data for this year and month exists in target table
+        target_df = spark.table(target_table)
+        existing_data = target_df.filter((col("year") == year) & (col("month") == month))
+        
+        if existing_data.count() == 0:
+            # Data doesn't exist, proceed with append
+            # Add file_path and ingest_time columns
+            source_df = source_df.withColumn("file_path", col("source_metadata.file_path")) \
+                                 .withColumn("ingest_time", current_timestamp())
+            
+            # Select all columns except source_metadata for appending
+            columns_to_append = [col for col in source_df.columns if col != "source_metadata"]
+            
+            # Append the data to the target table
+            source_df.select(columns_to_append).write.mode("append").saveAsTable(target_table)
+            
+            print(f"Append operation completed for {table_name}")
+            print(f"Source: {source_table}")
+            print(f"Target: {target_table}")
+            print(f"Appended data for year {year} and month {month}")
+            return "PROCESSED"
+        else:
+            # Data exists, update file_path and ingest_time
+            target_df.filter((col("year") == year) & (col("month") == month)) \
+                     .update({"file_path": file_path, "ingest_time": current_timestamp()})
+            
+            print(f"Data for year {year} and month {month} already exists in {target_table}. Updated metadata.")
+            return "PROCESSED"
+        
+    except Exception as e:
+        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
+        print(error_message)
+        return "FAILED"
