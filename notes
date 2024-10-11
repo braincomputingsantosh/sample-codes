@@ -31,6 +31,17 @@ def loan_amount_process_metadata(spark, target_table):
         current_timestamp().alias("processed_time")
     )
     
+    # Get the schema of the target table
+    target_schema = spark.table(target_table).schema
+    target_columns = set(field.name for field in target_schema.fields)
+    
+    # Filter the columns in result_df to match the target table
+    update_columns = [col for col in result_df.columns if col in target_columns]
+    
+    # Prepare the update and insert expressions
+    update_expr = {col: f"updates.{col}" for col in update_columns if col != "id"}
+    insert_expr = {col: f"updates.{col}" for col in update_columns}
+    
     # Perform upsert operation
     try:
         delta_table = DeltaTable.forName(spark, target_table)
@@ -38,22 +49,9 @@ def loan_amount_process_metadata(spark, target_table):
         delta_table.alias("target").merge(
             result_df.alias("updates"),
             "target.file_path = updates.file_path"
-        ).whenMatchedUpdate(set={
-            "year": "updates.year",
-            "month": "updates.month",
-            "file_name": "updates.file_name",
-            "file_extension": "updates.file_extension",
-            "processed_time": "updates.processed_time"
-        }).whenNotMatchedInsert(values={
-            "id": "updates.id",
-            "project_name": "updates.project_name",
-            "file_path": "updates.file_path",
-            "year": "updates.year",
-            "month": "updates.month",
-            "file_name": "updates.file_name",
-            "file_extension": "updates.file_extension",
-            "processed_time": "updates.processed_time"
-        }).execute()
+        ).whenMatchedUpdate(set=update_expr
+        ).whenNotMatchedInsert(values=insert_expr
+        ).execute()
         
         logger.info(f"Data successfully upserted to {target_table}")
     except Exception as e:
