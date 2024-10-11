@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import current_timestamp, lit, from_json, col, to_timestamp
+from pyspark.sql.functions import current_timestamp, lit, col
 from pyspark.sql.types import StructType, StructField, StringType, TimestampType
 import logging
 
@@ -27,14 +27,6 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
     # Initialize an empty DataFrame with the new schema
     result_df = spark.createDataFrame([], new_schema)
     
-    # Define the schema for the JSON data in source_metadata
-    json_schema = StructType([
-        StructField("file_name", StringType(), True),
-        StructField("file_size", StringType(), True),
-        StructField("file_path", StringType(), True),
-        StructField("file_block_length", StringType(), True)
-    ])
-    
     for table in source_tables:
         logger.info(f"Processing table: {table}")
         
@@ -52,16 +44,13 @@ def process_metadata(spark, source_tables, target_table, source_year, source_mon
                 logger.warning(f"No matching records found for {table} in {source_year}/{source_month}")
                 continue
             
-            # Extract metadata from the JSON column with explicit casting
+            # Extract metadata from the STRUCT column
             metadata_df = filtered_df.select(
                 lit(table).alias("source_table"),
-                from_json(col("source_metadata"), json_schema).alias("json_data")
-            ).select(
-                col("source_table"),
-                col("json_data.file_name").cast(StringType()).alias("file_name"),
-                col("json_data.file_size").cast(StringType()).alias("file_size"),
-                col("json_data.file_path").cast(StringType()).alias("file_path"),
-                col("json_data.file_block_length").cast(StringType()).alias("file_block_length"),
+                col("source_metadata.file_name").cast(StringType()).alias("file_name"),
+                col("source_metadata.file_size").cast(StringType()).alias("file_size"),
+                col("source_metadata.file_path").cast(StringType()).alias("file_path"),
+                col("source_metadata.file_block_length").cast(StringType()).alias("file_block_length"),
                 lit("").cast(StringType()).alias("file_type"),
                 current_timestamp().alias("processed_time")
             )
