@@ -1,27 +1,26 @@
 # Import necessary libraries
-import json
 from databricks import notebook
 
-# Set up the parameters
-params = {
-    "tables_to_append": "heloc,loan_amount,loan_month_loss_mit",
-    "source_schema": "bk_mpo_raw",
-    "target_schema": "test_bk_mpo",
-    "source_metadata_table": "source_metadata_new",
-    "target_metadata_schema": "test_bk_mpo",
-    "target_metadata_table": "source_metadata_new",
-    "target_month": "04",
-    "target_year": "2024"
-}
+# Define the parameters
+param_names = [
+    "tables_to_append",
+    "source_schema",
+    "target_schema",
+    "source_metadata_table",
+    "target_metadata_schema",
+    "target_metadata_table",
+    "target_month",
+    "target_year"
+]
 
-# Create widgets for each parameter
-for key, value in params.items():
-    dbutils.widgets.text(key, value)
+# Create input widgets for each parameter
+for param in param_names:
+    dbutils.widgets.text(param, "", f"Enter {param}")
 
 # Function to run the notebook
 def run_master_append_job():
     # Get the values from the widgets
-    params = {key: dbutils.widgets.get(key) for key in params.keys()}
+    params = {param: dbutils.widgets.get(param) for param in param_names}
     
     # Convert tables_to_append to a list
     params["tables_to_append"] = params["tables_to_append"].split(',')
@@ -39,3 +38,7 @@ result = run_master_append_job()
 print(f"Job Output: {result}")
 
 # You can add more code here to process the result if needed
+
+# Optional: Remove widgets after execution
+for param in param_names:
+    dbutils.widgets.remove(param)
