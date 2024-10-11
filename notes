@@ -1,2 +1,56 @@
-print("Input widgets have been created. Please look at the top of the notebook to enter your values.")
-print("After entering the values, run the next cell to execute the job.")
+class ETLProcessor:
+    def __init__(self, spark, source_schema, target_schema):
+        self.spark = spark
+        self.source_schema = source_schema
+        self.target_schema = target_schema
+
+    def truncate_and_insert_table_data(self, tables):
+        results = []
+        for table_name in tables:
+            try:
+                source_table = f"{self.source_schema}.{table_name}"
+                target_table = f"{self.target_schema}.{table_name}"
+                
+                # Truncate the target table
+                self.spark.sql(f"TRUNCATE TABLE {target_table}")
+                
+                # Read the source table
+                source_df = self.spark.table(source_table)
+                
+                # Insert all records into the target table
+                source_df.write.mode("overwrite").saveAsTable(target_table)
+                
+                print(f"Truncate and insert operation completed for {table_name}")
+                print(f"Source: {source_table}")
+                print(f"Target: {target_table}")
+                results.append((table_name, "SUCCESS"))
+            except Exception as e:
+                error_message = f"Error in truncate and insert operation for {table_name}: {str(e)}"
+                print(error_message)
+                results.append((table_name, error_message))
+        
+        return results
+
+    def run_etl(self, tables_to_process):
+        insert_results = self.truncate_and_insert_table_data(tables_to_process)
+        
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status in insert_results) else "FAILED"
+        print(f"Overall status: {overall_status}")
+        
+        return insert_results, overall_status
+
+# Usage in a Databricks notebook:
+# Assuming you have a SparkSession named 'spark'
+
+source_schema = "source_schema"
+target_schema = "target_schema"
+
+etl_processor = ETLProcessor(spark, source_schema, target_schema)
+
+tables_to_process = ["table1", "table2", "table3"]
+results, status = etl_processor.run_etl(tables_to_process)
+
+# Display results
+for table, result in results:
+    print(f"Table: {table}, Result: {result}")
+print(f"Overall ETL Status: {status}")
