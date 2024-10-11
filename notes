@@ -1,3 +1,17 @@
+# Databricks notebook source
+from pyspark.sql import SparkSession
+from pyspark.dbutils import DBUtils
+from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.functions import lit
+
+# COMMAND ----------
+
+# Initialize Spark session and DBUtils
+spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
+dbutils = DBUtils(spark)
+
+# COMMAND ----------
+
 class ETLProcessor:
     def __init__(self, spark, source_schema, target_schema):
         self.spark = spark
@@ -39,18 +53,68 @@ class ETLProcessor:
         
         return insert_results, overall_status
 
-# Usage in a Databricks notebook:
-# Assuming you have a SparkSession named 'spark'
+# COMMAND ----------
 
-source_schema = "source_schema"
-target_schema = "target_schema"
+# Configuration
+source_schema = "source_schema"  # Replace with your source schema name
+target_schema = "target_schema"  # Replace with your target schema name
 
+# Initialize ETLProcessor
 etl_processor = ETLProcessor(spark, source_schema, target_schema)
 
-tables_to_process = ["table1", "table2", "table3"]
+# List of tables to process
+tables_to_process = ["table1", "table2", "table3"]  # Replace with your actual table names
+
+# COMMAND ----------
+
+# Run ETL process
 results, status = etl_processor.run_etl(tables_to_process)
+
+# COMMAND ----------
 
 # Display results
 for table, result in results:
     print(f"Table: {table}, Result: {result}")
 print(f"Overall ETL Status: {status}")
+
+# COMMAND ----------
+
+# Save results to a Delta table
+schema = StructType([
+    StructField("table_name", StringType(), False),
+    StructField("status", StringType(), False)
+])
+
+results_df = spark.createDataFrame(results, schema)
+results_df = results_df.withColumn("processed_at", lit(spark.sql("SELECT current_timestamp()").collect()[0][0]))
+
+results_table = "etl_results"  # Replace with your desired table name
+results_df.write.format("delta").mode("append").saveAsTable(results_table)
+
+print(f"Results saved to table: {results_table}")
+
+# COMMAND ----------
+
+# Display the saved results
+display(spark.table(results_table))
+
+# COMMAND ----------
+
+# Log completion
+completion_message = f"ETL process completed at {spark.sql('SELECT current_timestamp()').collect()[0][0]} with status: {status}"
+print(completion_message)
+
+# You can also log this message to a logging system if you have one set up
+# log.info(completion_message)
+
+# COMMAND ----------
+
+# Stop the Spark session
+spark.stop()
+
+print("Spark session has been terminated. You can now close this notebook.")
+
+# COMMAND ----------
+
+# Databricks notebook exit
+dbutils.notebook.exit(status)
