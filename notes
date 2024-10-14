@@ -1,8 +1,12 @@
+import datetime
+from pyspark.sql.functions import col
+
 class ETLProcessor:
-    def __init__(self, spark, source_schema, target_schema):
+    def __init__(self, spark, source_schema, target_schema, metadata_table_name):
         self.spark = spark
         self.source_schema = source_schema
         self.target_schema = target_schema
+        self.metadata_table_name = metadata_table_name
 
     def truncate_and_insert_table_data(self, tables):
         results = []
@@ -22,27 +26,41 @@ class ETLProcessor:
                 # Insert all records into the target table
                 source_df.write.mode("overwrite").saveAsTable(target_table)
 
+                rows_inserted = source_df.count()
+
                 print(f"Truncate and insert operation completed for {table_name}")
                 print(f"Source: {source_table}")
                 print(f"Target: {target_table}")
-                results.append((table_name, "SUCCESS"))
+                results.append((table_name, "SUCCESS", file_path, rows_inserted))
             except Exception as e:
                 error_message = f"Error in truncate and insert operation for {table_name}: {str(e)}"
                 print(error_message)
-                results.append((table_name, error_message))
+                results.append((table_name, "FAILED", None, 0))
 
         return results
 
-    def run_etl(self, tables_to_process):
+    def run_etl(self, tables_to_process, project_name):
         insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status in insert_results) else "FAILED"
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _ in insert_results) else "FAILED"
+        
+        # Process and update metadata for each table
+        for table_name, status, file_path, rows_inserted in insert_results:
+            if file_path:
+                self.process_and_update_metadata(
+                    file_path=file_path,
+                    project_name=project_name,
+                    process_state=status,
+                    rows_inserted=rows_inserted,
+                    reprocess=False
+                )
+
         print(f"Overall status: {overall_status}")
         return insert_results, overall_status
 
-    def update_source_metadata(self, spark, metadata_table_name, metadata):
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    def update_source_metadata(self, metadata):
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         update_sql = f"""
-        MERGE INTO {metadata_table_name} AS target
+        MERGE INTO {self.metadata_table_name} AS target
         USING (SELECT 
             CAST(UNIX_TIMESTAMP() * 1000000 + CAST(RAND() * 1000000 AS BIGINT) AS BIGINT) AS id,
             '{metadata.get("project_name")}' AS project_name,
@@ -72,26 +90,40 @@ class ETLProcessor:
             INSERT (id, project_name, file_name, file_path, process_date, file_type, file_process_state, rows_inserted, file_size, last_error_msg, reprocess)
             VALUES (source.id, source.project_name, source.file_name, source.file_path, source.process_date, source.file_type, source.file_process_state, source.rows_inserted, source.file_size, source.last_error_msg, source.reprocess)
         """
-        spark.sql(update_sql)
+        self.spark.sql(update_sql)
         print(f"Metadata updated for file: {metadata.get('file_name')}")
 
-    def process_and_update_metadata(self, spark, metadata_table_name, file_path, project_name, process_state, rows_inserted, reprocess):
+    def process_and_update_metadata(self, file_path, project_name, process_state, rows_inserted, reprocess):
         # Extract file info
-        file_info = extract_file_info(file_path)
+        file_info = self.extract_file_info(file_path)
 
         # Prepare metadata dictionary
         metadata = {
             "project_name": project_name,
             "file_name": file_info["file_name"],
             "file_path": file_info["file_path"],
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "process_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "file_type": file_info["file_type"],
             "file_process_state": process_state,
-            "rows_inserted": rows_inserted,  # TODO: Insert count here
+            "rows_inserted": rows_inserted,
             "file_size": file_info["file_size"],
             "last_error_msg": "",
             "reprocess": reprocess
         }
 
         # Update source metadata
-        self.update_source_metadata(spark, metadata_table_name, metadata)
+        self.update_source_metadata(metadata)
+
+    def extract_file_info(self, file_path):
+        # This is a placeholder implementation. You should replace this with actual file info extraction logic.
+        import os
+        file_name = os.path.basename(file_path)
+        file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+        _, file_extension = os.path.splitext(file_name)
+        
+        return {
+            "file_name": file_name,
+            "file_path": file_path,
+            "file_type": file_extension.lstrip('.'),
+            "file_size": file_size
+        }
