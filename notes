@@ -1,33 +1,62 @@
-import re
-from pathlib import Path
+from pyspark.sql.functions import lit, current_timestamp
+from pyspark.sql.types import StructType, StructField, StringType, IntegerType, LongType, TimestampType
 
-def extract_file_info(file_path):
-    # Use Path to handle file paths consistently across operating systems
-    path = Path(file_path)
+def update_source_metadata(spark, metadata_table_name, metadata):
+    """
+    Update the source_metadata table with one row of metadata.
     
-    # Extract file name and extension
-    file_name = path.name
-    file_extension = path.suffix.lstrip('.')
-    
-    # Extract year and month using regex
-    match = re.search(r'/(\d{4})/(\d{2})/', str(path))
-    if match:
-        year, month = match.groups()
-    else:
-        year, month = None, None
-    
-    return {
-        "file_name": file_name,
-        "file_extension": file_extension,
-        "year": year,
-        "month": month
-    }
+    :param spark: SparkSession object
+    :param metadata_table_name: Name of the metadata table (including database if necessary)
+    :param metadata: Dictionary containing metadata values
+    """
+    # Define the schema for the metadata
+    schema = StructType([
+        StructField("project_name", StringType(), True),
+        StructField("file_name", StringType(), True),
+        StructField("file_path", StringType(), True),
+        StructField("process_date", TimestampType(), True),
+        StructField("file_type", StringType(), True),
+        StructField("file_process_state", StringType(), True),
+        StructField("rows_inserted", IntegerType(), True),
+        StructField("file_size", LongType(), True),
+        StructField("last_error_msg", StringType(), True),
+        StructField("reprocess", StringType(), True)
+    ])
+
+    # Create a DataFrame with the new metadata
+    new_metadata_df = spark.createDataFrame([
+        (
+            metadata.get("project_name"),
+            metadata.get("file_name"),
+            metadata.get("file_path"),
+            metadata.get("process_date", current_timestamp()),
+            metadata.get("file_type"),
+            metadata.get("file_process_state"),
+            metadata.get("rows_inserted"),
+            metadata.get("file_size"),
+            metadata.get("last_error_msg"),
+            metadata.get("reprocess")
+        )
+    ], schema)
+
+    # Write the new metadata to the table
+    new_metadata_df.write.mode("append").saveAsTable(metadata_table_name)
+
+    print(f"Metadata updated for file: {metadata.get('file_name')}")
 
 # Example usage
-file_path = "/Volumes/staging/bk_mpo_raw/landing/heloc/2024/04/HELOCData_202404_ALL/HELOCData_202404_ALL_2024-06-11.csv"
-result = extract_file_info(file_path)
+spark = SparkSession.builder.getOrCreate()
 
-print(f"File Name: {result['file_name']}")
-print(f"File Extension: {result['file_extension']}")
-print(f"Year: {result['year']}")
-print(f"Month: {result['month']}")
+metadata = {
+    "project_name": "HELOC",
+    "file_name": "HELOCData_202404_ALL_2024-06-11.csv",
+    "file_path": "/Volumes/staging/bk_mpo_raw/landing/heloc/2024/04/HELOCData_202404_ALL/HELOCData_202404_ALL_2024-06-11.csv",
+    "file_type": "csv",
+    "file_process_state": "PROCESSED",
+    "rows_inserted": 10000,
+    "file_size": 1048576,  # 1 MB in bytes
+    "last_error_msg": "",
+    "reprocess": "N"
+}
+
+update_source_metadata(spark, "your_database.source_metadata", metadata)
