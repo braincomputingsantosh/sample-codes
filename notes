@@ -1,15 +1,15 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, count, when
 
-def compare_tables(table1_name, table2_name, key_columns):
+def compare_tables(table1_name, table2_name, key_columns, ignore_columns=[]):
     spark = SparkSession.builder.getOrCreate()
     
     # Read both tables
     df1 = spark.table(table1_name)
     df2 = spark.table(table2_name)
     
-    # Identify all columns
-    all_columns = list(set(df1.columns + df2.columns))
+    # Identify all columns, excluding ignored columns
+    all_columns = list(set(df1.columns + df2.columns) - set(ignore_columns))
     
     # Full outer join
     joined_df = df1.select(all_columns).join(
@@ -24,7 +24,7 @@ def compare_tables(table1_name, table2_name, key_columns):
           .when(col(f"{c}_1").isNotNull() & col(f"{c}_2").isNull(), "Missing in Table2")
           .when(col(f"{c}_1") != col(f"{c}_2"), "Value Mismatch")
           .otherwise("Match").alias(c)
-        for c in all_columns if c not in key_columns]
+        for c in all_columns if c not in key_columns and c not in ignore_columns]
     )
     
     # Generate report
@@ -43,9 +43,10 @@ def compare_tables(table1_name, table2_name, key_columns):
 table1_name = "database1.table1"
 table2_name = "database2.table2"
 key_columns = ["id", "date"]  # Replace with your actual key columns
+ignore_columns = ["last_updated", "processed_flag"]  # Columns to ignore in comparison
 
-report_df = compare_tables(table1_name, table2_name, key_columns)
+report_df = compare_tables(table1_name, table2_name, key_columns, ignore_columns)
 report_df.show()
 
-# Optionally, save the report
+# Save the report (choose one of the methods discussed earlier)
 report_df.write.mode("overwrite").saveAsTable("database.comparison_report")
