@@ -1,52 +1,33 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, count, when
+import re
+from pathlib import Path
 
-def compare_tables(table1_name, table2_name, key_columns, ignore_columns=[]):
-    spark = SparkSession.builder.getOrCreate()
+def extract_file_info(file_path):
+    # Use Path to handle file paths consistently across operating systems
+    path = Path(file_path)
     
-    # Read both tables
-    df1 = spark.table(table1_name)
-    df2 = spark.table(table2_name)
+    # Extract file name and extension
+    file_name = path.name
+    file_extension = path.suffix.lstrip('.')
     
-    # Identify all columns, excluding ignored columns
-    all_columns = list(set(df1.columns + df2.columns) - set(ignore_columns))
+    # Extract year and month using regex
+    match = re.search(r'/(\d{4})/(\d{2})/', str(path))
+    if match:
+        year, month = match.groups()
+    else:
+        year, month = None, None
     
-    # Full outer join
-    joined_df = df1.select(all_columns).join(
-        df2.select(all_columns),
-        key_columns,
-        "full_outer"
-    )
-    
-    # Calculate differences
-    diff_df = joined_df.select(
-        *[when(col(f"{c}_1").isNull() & col(f"{c}_2").isNotNull(), "Missing in Table1")
-          .when(col(f"{c}_1").isNotNull() & col(f"{c}_2").isNull(), "Missing in Table2")
-          .when(col(f"{c}_1") != col(f"{c}_2"), "Value Mismatch")
-          .otherwise("Match").alias(c)
-        for c in all_columns if c not in key_columns and c not in ignore_columns]
-    )
-    
-    # Generate report
-    report = diff_df.agg(*[
-        count(when(col(c) != "Match", c)).alias(f"{c}_diff_count")
-        for c in diff_df.columns
-    ])
-    
-    # Add total row counts
-    report = report.withColumn("Table1_row_count", count("*").over())
-    report = report.withColumn("Table2_row_count", count("*").over())
-    
-    return report
+    return {
+        "file_name": file_name,
+        "file_extension": file_extension,
+        "year": year,
+        "month": month
+    }
 
-# Usage example
-table1_name = "database1.table1"
-table2_name = "database2.table2"
-key_columns = ["id", "date"]  # Replace with your actual key columns
-ignore_columns = ["last_updated", "processed_flag"]  # Columns to ignore in comparison
+# Example usage
+file_path = "/Volumes/staging/bk_mpo_raw/landing/heloc/2024/04/HELOCData_202404_ALL/HELOCData_202404_ALL_2024-06-11.csv"
+result = extract_file_info(file_path)
 
-report_df = compare_tables(table1_name, table2_name, key_columns, ignore_columns)
-report_df.show()
-
-# Save the report (choose one of the methods discussed earlier)
-report_df.write.mode("overwrite").saveAsTable("database.comparison_report")
+print(f"File Name: {result['file_name']}")
+print(f"File Extension: {result['file_extension']}")
+print(f"Year: {result['year']}")
+print(f"Month: {result['month']}")
