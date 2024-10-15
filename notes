@@ -112,3 +112,62 @@ REVOKE TRUNCATE ON TABLE catalog_name.schema_name.table_name FROM `group_name`;
 REVOKE ALL PRIVILEGES ON TABLE catalog_name.schema_name.table_name FROM `user_or_group_name`;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE catalog_name.schema_name.table_name TO `user_or_group_name`;
+
+
+
+# Strategy 1: Row count comparison
+# PostgreSQL
+postgres_count = spark.read \
+    .format("jdbc") \
+    .option("url", "jdbc:postgresql://host:port/database") \
+    .option("dbtable", "acs_table") \
+    .option("user", "username") \
+    .option("password", "password") \
+    .load() \
+    .count()
+
+# Databricks
+databricks_count = spark.table("acs_table").count()
+
+print(f"PostgreSQL count: {postgres_count}")
+print(f"Databricks count: {databricks_count}")
+
+# Strategy 2: Checksum comparison
+from pyspark.sql.functions import sum, hash
+
+# PostgreSQL
+postgres_checksum = spark.read \
+    .format("jdbc") \
+    .option("url", "jdbc:postgresql://host:port/database") \
+    .option("dbtable", "acs_table") \
+    .option("user", "username") \
+    .option("password", "password") \
+    .load() \
+    .agg(sum(hash(*columns)).alias("checksum")) \
+    .collect()[0]["checksum"]
+
+# Databricks
+databricks_checksum = spark.table("acs_table") \
+    .agg(sum(hash(*columns)).alias("checksum")) \
+    .collect()[0]["checksum"]
+
+print(f"PostgreSQL checksum: {postgres_checksum}")
+print(f"Databricks checksum: {databricks_checksum}")
+
+# Strategy 3: Detailed comparison
+from pyspark.sql.functions import col
+
+postgres_df = spark.read \
+    .format("jdbc") \
+    .option("url", "jdbc:postgresql://host:port/database") \
+    .option("dbtable", "acs_table") \
+    .option("user", "username") \
+    .option("password", "password") \
+    .load()
+
+databricks_df = spark.table("acs_table")
+
+diff_df = postgres_df.exceptAll(databricks_df).union(databricks_df.exceptAll(postgres_df))
+
+diff_df.show()
+print(f"Number of different rows: {diff_df.count()}")
