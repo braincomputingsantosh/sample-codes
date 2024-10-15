@@ -239,3 +239,39 @@ test_df = spark.read.jdbc(
 test_df.show()
 
 # If the above shows a dataframe with a single row containing 1, your connection is working
+
+
+---------------------- List all JARS ---------------------------
+
+from pyspark import SparkContext
+import re
+
+# Get the SparkContext
+sc = SparkContext.getOrCreate()
+
+# Get all JAR files
+jars = sc._jsc.sc().listJars()
+
+# Convert Java ArrayList to Python list
+jar_list = [jar for jar in jars]
+
+# Function to extract JAR name from path
+def extract_jar_name(path):
+    return re.search(r'[^/]+\.jar$', path).group(0)
+
+# Print all loaded JAR files
+print("Loaded JAR files:")
+for jar in jar_list:
+    print(extract_jar_name(jar))
+
+# Check specifically for PostgreSQL JAR
+postgres_jars = [jar for jar in jar_list if 'postgresql' in jar.lower()]
+if postgres_jars:
+    print("\nPostgreSQL JAR(s) found:")
+    for jar in postgres_jars:
+        print(extract_jar_name(jar))
+else:
+    print("\nNo PostgreSQL JAR found.")
+
+# Print total number of JARs
+print(f"\nTotal number of JARs: {len(jar_list)}")
