@@ -1,17 +1,53 @@
-# Initialize the ETLProcessor
-etl_processor = ETLProcessor(spark, 
-                             source_schema="source_schema", 
-                             target_schema="target_schema", 
-                             metadata_table_name="metadata_table")
+-- SQL Version
+-- Option 1: Using EXCEPT
+(SELECT * FROM bk_mpo_raw
+EXCEPT
+SELECT * FROM bk_mpo_silver)
+UNION ALL
+(SELECT * FROM bk_mpo_silver
+EXCEPT
+SELECT * FROM bk_mpo_raw);
 
-# Define the tables to process and the project name
-tables_to_process = ["table1", "table2", "table3"]
-project_name = "my_etl_project"
+-- Option 2: Using LEFT JOIN (if you want to see which specific rows are different)
+SELECT 
+  COALESCE(r.*, s.*) AS all_columns,
+  CASE 
+    WHEN r.* IS NULL THEN 'Only in Silver'
+    WHEN s.* IS NULL THEN 'Only in Raw'
+    ELSE 'Differ'
+  END AS difference_type
+FROM bk_mpo_raw r
+FULL OUTER JOIN bk_mpo_silver s
+ON r.id = s.id  -- Replace 'id' with your actual primary key column
+WHERE r.* IS NULL OR s.* IS NULL OR r.* != s.*;
 
-# Run the ETL process
-results, overall_status = etl_processor.run_etl(tables_to_process, project_name)
+# PySpark Version
+from pyspark.sql.functions import col, when
 
-# Print the results
-print(f"ETL Process completed with status: {overall_status}")
-for table, status, file_path, rows_inserted in results:
-    print(f"Table: {table}, Status: {status}, Rows Inserted: {rows_inserted}")
+# Read the tables
+raw_df = spark.table("bk_mpo_raw")
+silver_df = spark.table("bk_mpo_silver")
+
+# Option 1: Using except and union
+diff_df = raw_df.exceptAll(silver_df).unionAll(silver_df.exceptAll(raw_df))
+
+# Option 2: Using join
+# Assuming 'id' is the primary key, replace it with your actual primary key column
+columns = raw_df.columns
+join_condition = (raw_df['id'] == silver_df['id'])
+
+diff_df = raw_df.join(silver_df, join_condition, "full_outer").select(
+    *[when(raw_df[c].isNull() & silver_df[c].isNotNull(), silver_df[c])
+      .when(raw_df[c].isNotNull() & silver_df[c].isNull(), raw_df[c])
+      .otherwise(raw_df[c]).alias(c) for c in columns],
+    when(raw_df['id'].isNull(), 'Only in Silver')
+    .when(silver_df['id'].isNull(), 'Only in Raw')
+    .otherwise('Differ').alias('difference_type')
+).where(
+    (raw_df['id'].isNull()) | 
+    (silver_df['id'].isNull()) | 
+    (raw_df['id'] != silver_df['id'])
+)
+
+# Show the differences
+diff_df.show()
