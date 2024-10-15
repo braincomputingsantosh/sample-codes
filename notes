@@ -1,63 +1,60 @@
-def append_and_update_metadata(table_name, as_of_month):
+def append_and_update_metadata(raw_table_name, silver_table_name, as_of_month):
     try:
         # Construct full table names
-        source_table = f"{source_schema_name}.{table_name}"
-        target_table = f"{target_schema_name}.{table_name}"
+        raw_table = f"bk_mpo_raw.{raw_table_name}"
+        silver_table = f"bk_mpo_silver.{silver_table_name}"
         
-        # Read the source table
-        source_df = spark.table(source_table)
+        # Read the raw table
+        raw_df = spark.table(raw_table)
         
-        # Extract file_path from source_metadata
-        file_path = source_df.select(col("source_metadata.file_path")).first()[0]
+        # Extract file_path from source_metadata in the raw table
+        file_path = raw_df.filter(col("as_of_month") == as_of_month) \
+                          .select(col("source_metadata.file_path")).first()[0]
         print(f"file_path——>", file_path)
         
-        # Extract year and month from as_of_month
-        year = as_of_month // 100
-        month = as_of_month % 100
-        
-        # Check if data for this as_of_month exists in target table
-        target_df = spark.table(target_table)
-        existing_data = target_df.filter((col("as_of_month") == as_of_month))
+        # Check if data for this as_of_month exists in silver table
+        silver_df = spark.table(silver_table)
+        existing_data = silver_df.filter(col("as_of_month") == as_of_month)
         
         if existing_data.count() == 0:
-            # Data doesn't exist, proceed with append
-            # Add file_path and ingest_time columns
-            source_df = source_df.withColumn("file_path", col("source_metadata.file_path")) \
-                                 .withColumn("ingest_time", current_timestamp())
+            # Data doesn't exist in silver table, proceed with append
+            # Prepare data for silver table (excluding source_metadata)
+            columns_to_append = [col for col in raw_df.columns if col != "source_metadata"]
+            data_to_append = raw_df.filter(col("as_of_month") == as_of_month) \
+                                   .select(columns_to_append) \
+                                   .withColumn("file_path", lit(file_path)) \
+                                   .withColumn("ingest_time", current_timestamp())
             
-            # Select all columns except source_metadata for appending
-            columns_to_append = [col for col in source_df.columns if col != "source_metadata"]
+            # Append the data to the silver table
+            data_to_append.write.mode("append").saveAsTable(silver_table)
             
-            # Append the data to the target table
-            source_df.select(columns_to_append).write.mode("append").saveAsTable(target_table)
-            
-            print(f"Append operation completed for {table_name}")
-            print(f"Source: {source_table}")
-            print(f"Target: {target_table}")
+            print(f"Append operation completed for {silver_table_name}")
+            print(f"Source: {raw_table}")
+            print(f"Target: {silver_table}")
             print(f"Appended data for as_of_month {as_of_month}")
             return "PROCESSED"
         else:
-            # Data exists, update file_path and ingest_time
-            target_df.filter(col("as_of_month") == as_of_month) \
+            # Data exists in silver table, update file_path and ingest_time
+            silver_df.filter(col("as_of_month") == as_of_month) \
                      .update({"file_path": file_path, "ingest_time": current_timestamp()})
             
-            print(f"Data for as_of_month {as_of_month} already exists in {target_table}. Updated metadata.")
-            process_and_update_metadata(spark, metadata_table_name, file_path, table_name, "PROCESSED", 0, "false")
+            print(f"Data for as_of_month {as_of_month} already exists in {silver_table}. Updated metadata.")
+            process_and_update_metadata(spark, metadata_table_name, file_path, silver_table_name, "PROCESSED", 0, "false")
             return "PROCESSED"
     
     except Exception as e:
-        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
-        process_and_update_metadata(spark, metadata_table_name, file_path, table_name, "FAILED", 0, "true")
+        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}\n{traceback.format_exc()}"
+        process_and_update_metadata(spark, metadata_table_name, file_path, silver_table_name, "FAILED", 0, "true")
         print(error_message)
         return "FAILED"
 
-# Usage example including the EXCEPT query
-def process_table(raw_table, silver_table):
+# Function to process the table
+def process_table(raw_table_name, silver_table_name):
     # Execute the EXCEPT query
     diff_df = spark.sql(f"""
-    SELECT as_of_month FROM {raw_table}
+    SELECT as_of_month FROM bk_mpo_raw.{raw_table_name}
     EXCEPT
-    SELECT as_of_month FROM {silver_table}
+    SELECT as_of_month FROM bk_mpo_silver.{silver_table_name}
     """)
     
     # Get the list of as_of_month values to process
@@ -65,15 +62,15 @@ def process_table(raw_table, silver_table):
     
     results = []
     for as_of_month in as_of_months_to_process:
-        result = append_and_update_metadata(silver_table, as_of_month)
+        result = append_and_update_metadata(raw_table_name, silver_table_name, as_of_month)
         results.append((as_of_month, result))
     
     return results
 
 # Example usage
-raw_table = "bk_mpo_raw.heloc"
-silver_table = "bk_mpo_silver.heloc"
-processing_results = process_table(raw_table, silver_table)
+raw_table_name = "heloc"
+silver_table_name = "heloc"
+processing_results = process_table(raw_table_name, silver_table_name)
 
 for as_of_month, result in processing_results:
     print(f"as_of_month: {as_of_month}, Result: {result}")
