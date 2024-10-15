@@ -1,5 +1,5 @@
-from pyspark.sql.functions import col, lit, current_timestamp, when
-from pyspark.sql.types import StringType
+from pyspark.sql.functions import col, lit, current_timestamp, when, expr
+from pyspark.sql.types import StringType, LongType
 from datetime import datetime
 import traceback
 
@@ -10,6 +10,9 @@ def update_source_metadata(spark, metadata_table_name, metadata):
     
     # Create a DataFrame from the metadata
     metadata_df = spark.createDataFrame([metadata])
+    
+    # Add ID column using UNIX timestamp
+    metadata_df = metadata_df.withColumn("id", expr("CAST(UNIX_TIMESTAMP() * 1000000 AS BIGINT)"))
     
     # Ensure 'reprocess' is always a string and handle NULL values
     metadata_df = metadata_df.withColumn(
