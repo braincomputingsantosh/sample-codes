@@ -171,3 +171,38 @@ diff_df = postgres_df.exceptAll(databricks_df).union(databricks_df.exceptAll(pos
 
 diff_df.show()
 print(f"Number of different rows: {diff_df.count()}")
+
+
+------------------------------------------------------------------------------------------------------------
+
+from pyspark.sql import SparkSession
+
+# Initialize Spark session if not already done
+spark = SparkSession.builder.appName("DataComparison").getOrCreate()
+
+# PostgreSQL connection properties
+jdbc_url = "jdbc:postgresql://host:port/database"
+connection_properties = {
+    "user": "username",
+    "password": "password",
+    "driver": "org.postgresql.Driver"
+}
+
+# Get count from PostgreSQL
+postgres_count_df = spark.read.jdbc(
+    url=jdbc_url,
+    table="(SELECT COUNT(*) as count FROM acs_table) as count_query",
+    properties=connection_properties
+)
+postgres_count = postgres_count_df.collect()[0]['count']
+
+# Get count from Databricks
+databricks_count = spark.sql("SELECT COUNT(*) as count FROM acs_table").collect()[0]['count']
+
+print(f"PostgreSQL count: {postgres_count}")
+print(f"Databricks count: {databricks_count}")
+
+if postgres_count == databricks_count:
+    print("Row counts match!")
+else:
+    print(f"Row counts do not match. Difference: {abs(postgres_count - databricks_count)}")
