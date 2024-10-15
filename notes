@@ -3,48 +3,21 @@ from datetime import datetime
 import traceback
 
 def update_source_metadata(spark, metadata_table_name, metadata):
-    update_sql = f"""
-    MERGE INTO {metadata_table_name} AS target
-    USING (SELECT 
-        CAST(UNIX_TIMESTAMP() * 1000000 AS BIGINT) AS id,
-        '{metadata.get("project_name")}' AS project_name,
-        '{metadata.get("file_name")}' AS file_name,
-        '{metadata.get("file_path")}' AS file_path,
-        '{metadata.get("process_date")}' AS process_date,
-        '{metadata.get("file_type")}' AS file_type,
-        '{metadata.get("file_process_state")}' AS file_process_state,
-        {metadata.get("rows_inserted", 'NULL')} AS rows_inserted,
-        {metadata.get("file_size", 'NULL')} AS file_size,
-        '{metadata.get("last_error_msg", "")}' AS last_error_msg,
-        '{metadata.get("reprocess", "N")}' AS reprocess
-    ) AS source
-    ON target.file_path = source.file_path
-    WHEN MATCHED THEN
-        UPDATE SET
-            project_name = source.project_name,
-            file_name = source.file_name,
-            process_date = source.process_date,
-            file_type = source.file_type,
-            file_process_state = source.file_process_state,
-            rows_inserted = source.rows_inserted,
-            file_size = source.file_size,
-            last_error_msg = source.last_error_msg,
-            reprocess = source.reprocess
-    WHEN NOT MATCHED THEN
-        INSERT (id, project_name, file_name, file_path, process_date, file_type, file_process_state, rows_inserted, file_size, last_error_msg, reprocess)
-        VALUES (source.id, source.project_name, source.file_name, source.file_path, source.process_date, source.file_type, source.file_process_state, source.rows_inserted, source.file_size, source.last_error_msg, source.reprocess)
-    """
+    # Delete existing record if it exists
+    spark.sql(f"""
+    DELETE FROM {metadata_table_name}
+    WHERE file_path = '{metadata['file_path']}'
+    """)
     
-    spark.sql(update_sql)
-    print(f"Metadata updated for file: {metadata.get('file_name')}")
+    # Insert the new or updated record
+    spark.createDataFrame([metadata]).write.mode("append").saveAsTable(metadata_table_name)
+    
+    print(f"Metadata updated for file: {metadata['file_name']}")
 
 def extract_file_info(file_path):
-    # Implement this function to extract relevant file information
-    # For now, we'll return a dummy dictionary
     return {
         "file_name": file_path.split("/")[-1],
-        "file_type": "csv",  # Assume CSV for now
-        "file_size": 1000  # Dummy size
+        "file_type": "csv"  # Assume CSV for now
     }
 
 def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
@@ -79,8 +52,11 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             process_state = "PROCESSED"
         else:
             # Data exists in silver table, update file_path and ingest_time
-            silver_df.filter(col("as_of_month") == as_of_month) \
-                     .update({"file_path": file_path, "ingest_time": current_timestamp()})
+            spark.sql(f"""
+            UPDATE {silver_table}
+            SET file_path = '{file_path}', ingest_time = current_timestamp()
+            WHERE as_of_month = {as_of_month}
+            """)
             
             rows_inserted = 0
             process_state = "UPDATED"
@@ -97,12 +73,11 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             "file_type": file_info["file_type"],
             "file_process_state": process_state,
             "rows_inserted": rows_inserted,
-            "file_size": file_info["file_size"],
             "last_error_msg": "",
             "reprocess": "N"
         }
         
-        # Update metadata
+        # Update metadata using the new function
         update_source_metadata(spark, metadata_table_name, metadata)
         
         print(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}")
@@ -120,7 +95,6 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             "file_type": "unknown",
             "file_process_state": "FAILED",
             "rows_inserted": 0,
-            "file_size": 0,
             "last_error_msg": error_message[:255],  # Truncate error message if necessary
             "reprocess": "Y"
         }
