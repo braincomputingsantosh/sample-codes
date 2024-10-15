@@ -51,3 +51,64 @@ diff_df = raw_df.join(silver_df, join_condition, "full_outer").select(
 
 # Show the differences
 diff_df.show()
+
+
+
+
+1. Time Travel (Delta Lake tables):
+   If your table is a Delta Lake table, you can use Time Travel to access the data before the TRUNCATE operation:
+
+   -- SQL
+   SELECT * FROM table_name VERSION AS OF version
+   -- or
+   SELECT * FROM table_name TIMESTAMP AS OF timestamp
+
+   # PySpark
+   from delta.tables import *
+   
+   deltaTable = DeltaTable.forName(spark, "table_name")
+   df = deltaTable.history()
+   df.show()  # Find the version number before TRUNCATE
+   
+   # Read the version before TRUNCATE
+   df_before_truncate = spark.read.format("delta").option("versionAsOf", version_number).table("table_name")
+
+2. VACUUM command considerations:
+   -- Check the retention period
+   DESCRIBE HISTORY table_name;
+   
+   -- Extend retention period if needed
+   ALTER TABLE table_name SET TBLPROPERTIES (delta.logRetentionDuration = '30 DAYS');
+
+3. Databricks Backup and Restore:
+   -- This is an admin-level feature, no direct SQL/PySpark commands
+
+4. Snapshots (if implemented):
+   -- Restore from snapshot (implementation-specific)
+
+5. Logging and Audit:
+   -- Query audit logs (admin access required)
+   SELECT * FROM system.access_log
+   WHERE table_name = 'your_table'
+   AND operation = 'TRUNCATE'
+   ORDER BY event_time DESC
+   LIMIT 1;
+
+6. External Backups:
+   -- Restore from external backup (implementation-specific)
+
+7. Reconstructing data:
+   -- Use source data or downstream copies to reconstruct (implementation-specific)
+
+
+
+-- Revoke TRUNCATE permission from a specific user
+REVOKE TRUNCATE ON TABLE catalog_name.schema_name.table_name FROM `user_name`;
+
+-- Revoke TRUNCATE permission from a specific group
+REVOKE TRUNCATE ON TABLE catalog_name.schema_name.table_name FROM `group_name`;
+
+-- If you want to revoke ALL permissions and then grant specific ones (excluding TRUNCATE)
+REVOKE ALL PRIVILEGES ON TABLE catalog_name.schema_name.table_name FROM `user_or_group_name`;
+
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE catalog_name.schema_name.table_name TO `user_or_group_name`;
