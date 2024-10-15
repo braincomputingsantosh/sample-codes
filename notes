@@ -1,4 +1,5 @@
-from pyspark.sql.functions import col, lit, current_timestamp
+from pyspark.sql.functions import col, lit, current_timestamp, when
+from pyspark.sql.types import StringType
 from datetime import datetime
 import traceback
 
@@ -7,6 +8,24 @@ def update_source_metadata(spark, metadata_table_name, metadata):
     if isinstance(metadata['process_date'], str):
         metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
     
+    # Create a DataFrame from the metadata
+    metadata_df = spark.createDataFrame([metadata])
+    
+    # Ensure 'reprocess' is always a string and handle NULL values
+    metadata_df = metadata_df.withColumn(
+        "reprocess",
+        when(col("reprocess").isNull(), "false")
+        .otherwise(col("reprocess").cast(StringType()))
+    )
+    
+    # Get the schema of the target table
+    target_schema = spark.table(metadata_table_name).schema
+    
+    # Cast the columns of metadata_df to match the target schema
+    for field in target_schema.fields:
+        if field.name in metadata_df.columns:
+            metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
+    
     # Delete existing record if it exists
     spark.sql(f"""
     DELETE FROM {metadata_table_name}
@@ -14,7 +33,7 @@ def update_source_metadata(spark, metadata_table_name, metadata):
     """)
     
     # Insert the new or updated record
-    spark.createDataFrame([metadata]).write.mode("append").saveAsTable(metadata_table_name)
+    metadata_df.write.mode("append").saveAsTable(metadata_table_name)
     
     print(f"Metadata updated for file: {metadata['file_name']}")
 
@@ -112,7 +131,7 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     diff_df = spark.sql(f"""
     SELECT as_of_month FROM bk_mpo_raw.{raw_table_name}
     EXCEPT
-    SELECT as_of_month FROM bk_mpo_silver.{silver_table_name}
+    SELECT as_of_month FROM test_bk_mpo.{silver_table_name}_silver
     """)
     
     # Get the list of as_of_month values to process
