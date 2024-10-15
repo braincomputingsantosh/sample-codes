@@ -1,345 +1,79 @@
--- SQL Version
--- Option 1: Using EXCEPT
-(SELECT * FROM bk_mpo_raw
-EXCEPT
-SELECT * FROM bk_mpo_silver)
-UNION ALL
-(SELECT * FROM bk_mpo_silver
-EXCEPT
-SELECT * FROM bk_mpo_raw);
-
--- Option 2: Using LEFT JOIN (if you want to see which specific rows are different)
-SELECT 
-  COALESCE(r.*, s.*) AS all_columns,
-  CASE 
-    WHEN r.* IS NULL THEN 'Only in Silver'
-    WHEN s.* IS NULL THEN 'Only in Raw'
-    ELSE 'Differ'
-  END AS difference_type
-FROM bk_mpo_raw r
-FULL OUTER JOIN bk_mpo_silver s
-ON r.id = s.id  -- Replace 'id' with your actual primary key column
-WHERE r.* IS NULL OR s.* IS NULL OR r.* != s.*;
-
-# PySpark Version
-from pyspark.sql.functions import col, when
-
-# Read the tables
-raw_df = spark.table("bk_mpo_raw")
-silver_df = spark.table("bk_mpo_silver")
-
-# Option 1: Using except and union
-diff_df = raw_df.exceptAll(silver_df).unionAll(silver_df.exceptAll(raw_df))
-
-# Option 2: Using join
-# Assuming 'id' is the primary key, replace it with your actual primary key column
-columns = raw_df.columns
-join_condition = (raw_df['id'] == silver_df['id'])
-
-diff_df = raw_df.join(silver_df, join_condition, "full_outer").select(
-    *[when(raw_df[c].isNull() & silver_df[c].isNotNull(), silver_df[c])
-      .when(raw_df[c].isNotNull() & silver_df[c].isNull(), raw_df[c])
-      .otherwise(raw_df[c]).alias(c) for c in columns],
-    when(raw_df['id'].isNull(), 'Only in Silver')
-    .when(silver_df['id'].isNull(), 'Only in Raw')
-    .otherwise('Differ').alias('difference_type')
-).where(
-    (raw_df['id'].isNull()) | 
-    (silver_df['id'].isNull()) | 
-    (raw_df['id'] != silver_df['id'])
-)
-
-# Show the differences
-diff_df.show()
-
-
-
-
-1. Time Travel (Delta Lake tables):
-   If your table is a Delta Lake table, you can use Time Travel to access the data before the TRUNCATE operation:
-
-   -- SQL
-   SELECT * FROM table_name VERSION AS OF version
-   -- or
-   SELECT * FROM table_name TIMESTAMP AS OF timestamp
-
-   # PySpark
-   from delta.tables import *
-   
-   deltaTable = DeltaTable.forName(spark, "table_name")
-   df = deltaTable.history()
-   df.show()  # Find the version number before TRUNCATE
-   
-   # Read the version before TRUNCATE
-   df_before_truncate = spark.read.format("delta").option("versionAsOf", version_number).table("table_name")
-
-2. VACUUM command considerations:
-   -- Check the retention period
-   DESCRIBE HISTORY table_name;
-   
-   -- Extend retention period if needed
-   ALTER TABLE table_name SET TBLPROPERTIES (delta.logRetentionDuration = '30 DAYS');
-
-3. Databricks Backup and Restore:
-   -- This is an admin-level feature, no direct SQL/PySpark commands
-
-4. Snapshots (if implemented):
-   -- Restore from snapshot (implementation-specific)
-
-5. Logging and Audit:
-   -- Query audit logs (admin access required)
-   SELECT * FROM system.access_log
-   WHERE table_name = 'your_table'
-   AND operation = 'TRUNCATE'
-   ORDER BY event_time DESC
-   LIMIT 1;
-
-6. External Backups:
-   -- Restore from external backup (implementation-specific)
-
-7. Reconstructing data:
-   -- Use source data or downstream copies to reconstruct (implementation-specific)
-
-
-
--- Revoke TRUNCATE permission from a specific user
-REVOKE TRUNCATE ON TABLE catalog_name.schema_name.table_name FROM `user_name`;
-
--- Revoke TRUNCATE permission from a specific group
-REVOKE TRUNCATE ON TABLE catalog_name.schema_name.table_name FROM `group_name`;
-
--- If you want to revoke ALL permissions and then grant specific ones (excluding TRUNCATE)
-REVOKE ALL PRIVILEGES ON TABLE catalog_name.schema_name.table_name FROM `user_or_group_name`;
-
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE catalog_name.schema_name.table_name TO `user_or_group_name`;
-
-
-
-# Strategy 1: Row count comparison
-# PostgreSQL
-postgres_count = spark.read \
-    .format("jdbc") \
-    .option("url", "jdbc:postgresql://host:port/database") \
-    .option("dbtable", "acs_table") \
-    .option("user", "username") \
-    .option("password", "password") \
-    .load() \
-    .count()
-
-# Databricks
-databricks_count = spark.table("acs_table").count()
-
-print(f"PostgreSQL count: {postgres_count}")
-print(f"Databricks count: {databricks_count}")
-
-# Strategy 2: Checksum comparison
-from pyspark.sql.functions import sum, hash
-
-# PostgreSQL
-postgres_checksum = spark.read \
-    .format("jdbc") \
-    .option("url", "jdbc:postgresql://host:port/database") \
-    .option("dbtable", "acs_table") \
-    .option("user", "username") \
-    .option("password", "password") \
-    .load() \
-    .agg(sum(hash(*columns)).alias("checksum")) \
-    .collect()[0]["checksum"]
-
-# Databricks
-databricks_checksum = spark.table("acs_table") \
-    .agg(sum(hash(*columns)).alias("checksum")) \
-    .collect()[0]["checksum"]
-
-print(f"PostgreSQL checksum: {postgres_checksum}")
-print(f"Databricks checksum: {databricks_checksum}")
-
-# Strategy 3: Detailed comparison
-from pyspark.sql.functions import col
-
-postgres_df = spark.read \
-    .format("jdbc") \
-    .option("url", "jdbc:postgresql://host:port/database") \
-    .option("dbtable", "acs_table") \
-    .option("user", "username") \
-    .option("password", "password") \
-    .load()
-
-databricks_df = spark.table("acs_table")
-
-diff_df = postgres_df.exceptAll(databricks_df).union(databricks_df.exceptAll(postgres_df))
-
-diff_df.show()
-print(f"Number of different rows: {diff_df.count()}")
-
-
-------------------------------------------------------------------------------------------------------------
-
-from pyspark.sql import SparkSession
-
-# Initialize Spark session if not already done
-spark = SparkSession.builder.appName("DataComparison").getOrCreate()
-
-# PostgreSQL connection properties
-jdbc_url = "jdbc:postgresql://host:port/database"
-connection_properties = {
-    "user": "username",
-    "password": "password",
-    "driver": "org.postgresql.Driver"
-}
-
-# Get count from PostgreSQL
-postgres_count_df = spark.read.jdbc(
-    url=jdbc_url,
-    table="(SELECT COUNT(*) as count FROM acs_table) as count_query",
-    properties=connection_properties
-)
-postgres_count = postgres_count_df.collect()[0]['count']
-
-# Get count from Databricks
-databricks_count = spark.sql("SELECT COUNT(*) as count FROM acs_table").collect()[0]['count']
-
-print(f"PostgreSQL count: {postgres_count}")
-print(f"Databricks count: {databricks_count}")
-
-if postgres_count == databricks_count:
-    print("Row counts match!")
-else:
-    print(f"Row counts do not match. Difference: {abs(postgres_count - databricks_count)}")
-
-
--------------------------------------------------------------------------------------------------------------
-
-# Cluster configuration
-# In your Databricks cluster configuration, add this Maven coordinate:
-# org.postgresql:postgresql:42.2.18
-
-# In your notebook, you may need to add these imports:
-from pyspark.sql import SparkSession
-import os
-
-# Set up the JDBC driver
-spark.conf.set("spark.jars.packages", "org.postgresql:postgresql:42.2.18")
-os.environ['PYSPARK_SUBMIT_ARGS'] = '--packages org.postgresql:postgresql:42.2.18 pyspark-shell'
-
-# Your connection code (modify as needed)
-jdbc_url = "jdbc:postgresql://host:port/database"
-connection_properties = {
-    "user": "username",
-    "password": "password",
-    "driver": "org.postgresql.Driver"
-}
-
-# Test the connection
-test_df = spark.read.jdbc(
-    url=jdbc_url,
-    table="(SELECT 1 as test) as test_query",
-    properties=connection_properties
-)
-test_df.show()
-
-# If the above shows a dataframe with a single row containing 1, your connection is working
-
-
----------------------- List all JARS ---------------------------
-
-from pyspark import SparkContext
-import re
-
-# Get the SparkContext
-sc = SparkContext.getOrCreate()
-
-# Get all JAR files
-jars = sc._jsc.sc().listJars()
-
-# Convert Java ArrayList to Python list
-jar_list = [jar for jar in jars]
-
-# Function to extract JAR name from path
-def extract_jar_name(path):
-    return re.search(r'[^/]+\.jar$', path).group(0)
-
-# Print all loaded JAR files
-print("Loaded JAR files:")
-for jar in jar_list:
-    print(extract_jar_name(jar))
-
-# Check specifically for PostgreSQL JAR
-postgres_jars = [jar for jar in jar_list if 'postgresql' in jar.lower()]
-if postgres_jars:
-    print("\nPostgreSQL JAR(s) found:")
-    for jar in postgres_jars:
-        print(extract_jar_name(jar))
-else:
-    print("\nNo PostgreSQL JAR found.")
-
-# Print total number of JARs
-print(f"\nTotal number of JARs: {len(jar_list)}")
-
-
-------- New Compare ------------
-
--- SQL Version
--- Option 1: Using EXCEPT (excluding columns)
-(SELECT col1, col2, col3 -- List only the columns you want to compare
-FROM bk_mpo_raw
-EXCEPT
-SELECT col1, col2, col3 -- List the same columns here
-FROM bk_mpo_silver)
-UNION ALL
-(SELECT col1, col2, col3 -- List the same columns here
-FROM bk_mpo_silver
-EXCEPT
-SELECT col1, col2, col3 -- List the same columns here
-FROM bk_mpo_raw);
-
--- Option 2: Using LEFT JOIN (excluding columns)
-SELECT 
-  COALESCE(r.col1, s.col1) AS col1,
-  COALESCE(r.col2, s.col2) AS col2,
-  COALESCE(r.col3, s.col3) AS col3,
-  -- Add more columns as needed
-  CASE 
-    WHEN r.id IS NULL THEN 'Only in Silver'
-    WHEN s.id IS NULL THEN 'Only in Raw'
-    ELSE 'Differ'
-  END AS difference_type
-FROM bk_mpo_raw r
-FULL OUTER JOIN bk_mpo_silver s
-ON r.id = s.id  -- Replace 'id' with your actual primary key column
-WHERE r.id IS NULL OR s.id IS NULL OR 
-  (r.col1 != s.col1 OR r.col2 != s.col2 OR r.col3 != s.col3);
-  -- Add more column comparisons as needed
-
-# PySpark Version
-from pyspark.sql.functions import col, when
-
-# Read the tables
-raw_df = spark.table("bk_mpo_raw")
-silver_df = spark.table("bk_mpo_silver")
-
-# Define columns to compare (exclude the ones you want to ignore)
-columns_to_compare = ['col1', 'col2', 'col3']  # Add your columns here
-
-# Option 1: Using except and union
-diff_df = raw_df.select(columns_to_compare).exceptAll(silver_df.select(columns_to_compare)) \
-    .unionAll(silver_df.select(columns_to_compare).exceptAll(raw_df.select(columns_to_compare)))
-
-# Option 2: Using join
-join_condition = (raw_df['id'] == silver_df['id'])  # Replace 'id' with your primary key
-
-diff_df = raw_df.join(silver_df, join_condition, "full_outer").select(
-    *[when(raw_df[c].isNull() & silver_df[c].isNotNull(), silver_df[c])
-      .when(raw_df[c].isNotNull() & silver_df[c].isNull(), raw_df[c])
-      .otherwise(raw_df[c]).alias(c) for c in columns_to_compare],
-    when(raw_df['id'].isNull(), 'Only in Silver')
-    .when(silver_df['id'].isNull(), 'Only in Raw')
-    .otherwise('Differ').alias('difference_type')
-).where(
-    (raw_df['id'].isNull()) | 
-    (silver_df['id'].isNull()) | 
-    reduce(lambda x, y: x | y, [(raw_df[c] != silver_df[c]) for c in columns_to_compare])
-)
-
-# Show the differences
-diff_df.show()
+def append_and_update_metadata(table_name, as_of_month):
+    try:
+        # Construct full table names
+        source_table = f"{source_schema_name}.{table_name}"
+        target_table = f"{target_schema_name}.{table_name}"
+        
+        # Read the source table
+        source_df = spark.table(source_table)
+        
+        # Extract file_path from source_metadata
+        file_path = source_df.select(col("source_metadata.file_path")).first()[0]
+        print(f"file_path——>", file_path)
+        
+        # Extract year and month from as_of_month
+        year = as_of_month // 100
+        month = as_of_month % 100
+        
+        # Check if data for this as_of_month exists in target table
+        target_df = spark.table(target_table)
+        existing_data = target_df.filter((col("as_of_month") == as_of_month))
+        
+        if existing_data.count() == 0:
+            # Data doesn't exist, proceed with append
+            # Add file_path and ingest_time columns
+            source_df = source_df.withColumn("file_path", col("source_metadata.file_path")) \
+                                 .withColumn("ingest_time", current_timestamp())
+            
+            # Select all columns except source_metadata for appending
+            columns_to_append = [col for col in source_df.columns if col != "source_metadata"]
+            
+            # Append the data to the target table
+            source_df.select(columns_to_append).write.mode("append").saveAsTable(target_table)
+            
+            print(f"Append operation completed for {table_name}")
+            print(f"Source: {source_table}")
+            print(f"Target: {target_table}")
+            print(f"Appended data for as_of_month {as_of_month}")
+            return "PROCESSED"
+        else:
+            # Data exists, update file_path and ingest_time
+            target_df.filter(col("as_of_month") == as_of_month) \
+                     .update({"file_path": file_path, "ingest_time": current_timestamp()})
+            
+            print(f"Data for as_of_month {as_of_month} already exists in {target_table}. Updated metadata.")
+            process_and_update_metadata(spark, metadata_table_name, file_path, table_name, "PROCESSED", 0, "false")
+            return "PROCESSED"
+    
+    except Exception as e:
+        error_message = f"Error appending {table_name}: {str(e)}\n{traceback.format_exc()}"
+        process_and_update_metadata(spark, metadata_table_name, file_path, table_name, "FAILED", 0, "true")
+        print(error_message)
+        return "FAILED"
+
+# Usage example including the EXCEPT query
+def process_table(raw_table, silver_table):
+    # Execute the EXCEPT query
+    diff_df = spark.sql(f"""
+    SELECT as_of_month FROM {raw_table}
+    EXCEPT
+    SELECT as_of_month FROM {silver_table}
+    """)
+    
+    # Get the list of as_of_month values to process
+    as_of_months_to_process = [row.as_of_month for row in diff_df.collect()]
+    
+    results = []
+    for as_of_month in as_of_months_to_process:
+        result = append_and_update_metadata(silver_table, as_of_month)
+        results.append((as_of_month, result))
+    
+    return results
+
+# Example usage
+raw_table = "bk_mpo_raw.heloc"
+silver_table = "bk_mpo_silver.heloc"
+processing_results = process_table(raw_table, silver_table)
+
+for as_of_month, result in processing_results:
+    print(f"as_of_month: {as_of_month}, Result: {result}")
