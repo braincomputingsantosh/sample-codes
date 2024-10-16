@@ -1,88 +1,30 @@
-"""
-HELOC Data Append and Update Source
+## Description
+This change implements BK MPO operations to load data from raw to silver layers. This enhancement improves our data processing pipeline by facilitating the movement of raw data into a more refined silver layer for further analysis and use. There are 4 Notebooks included for review.
 
-This script performs the following operations:
-1. Updates source metadata for HELOC (Home Equity Line of Credit) data.
-2. Appends and updates records in a target table (likely a 'silver' table in a data lake architecture).
-3. Handles data processing for raw and silver tables, including:
-   - Reading data from a raw table
-   - Checking for existing data in the silver table
-   - Appending new data or updating existing records
-   - Updating file metadata (e.g., file path, process date, status)
-4. Implements error handling and logging for the data processing pipeline
-5. Executes data processing for specific time periods (as_of_month)
+Fixes # (issue)
+This is a new code for review, no specific issue number to reference.
 
-The script uses PySpark for data manipulation and is designed to work with
-large-scale data processing in a distributed computing environment.
+## End-User Impact
+This change will improve data availability and quality for downstream users. Analysts and data scientists will have access to more refined data in the silver layer, potentially speeding up their workflows and improving data reliability.
 
-Key functions:
-- update_source_metadata: Updates metadata for the source files
-- extract_file_info: Extracts information from file paths
-- append_and_update_metadata: Main function for appending and updating data
-- process_table: Processes tables based on specified parameters
+## Performance Impact
+None
 
-This code is part of a data pipeline for managing and updating HELOC data,
-likely in a financial or banking context.
-"""
+## Type of change
+- [x] New feature (non-breaking change which adds functionality)
 
+## How Has This Been Tested?
+- [ ] Unit testing
+- [x] Manual testing
 
-def update_source_metadata(spark, metadata_table_name, metadata):
-    """
-    Updates the source metadata in the specified metadata table.
-    
-    Args:
-        spark: SparkSession object
-        metadata_table_name: Name of the table storing metadata
-        metadata: Dictionary containing metadata to be updated
-    
-    This function ensures the process_date is in the correct format and
-    updates the metadata table with the provided information.
-    """
-    # Function implementation...
+Please describe the tests you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration.
 
-def extract_file_info(file_path):
-    """
-    Extracts file name and type information from the given file path.
-    
-    Args:
-        file_path: String representing the full path of the file
-    
-    Returns:
-        Dictionary containing 'file_name' and 'file_type'
-    
-    Assumes the file type is CSV for this implementation.
-    """
-    # Function implementation...
-
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
-    """
-    Main function to append and update metadata for HELOC data processing.
-    
-    Args:
-        spark: SparkSession object
-        raw_table_name: Name of the raw data table
-        silver_table_name: Name of the processed (silver) data table
-        metadata_table_name: Name of the metadata table
-        as_of_month: The month for which data is being processed
-    
-    This function orchestrates the entire process of reading raw data,
-    updating or appending to the silver table, and managing metadata updates.
-    It handles both successful processing and error scenarios.
-    """
-    # Function implementation...
-
-def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
-    """
-    Processes tables based on specified parameters.
-    
-    Args:
-        spark: SparkSession object
-        raw_table_name: Name of the raw data table
-        silver_table_name: Name of the processed (silver) data table
-        metadata_table_name: Name of the metadata table
-    
-    This function appears to handle the execution of data processing
-    for specific time periods (as_of_month) and manages the overall
-    data flow between raw and silver tables.
-    """
-    # Function implementation...
+## Checklist:
+- [x] My code follows the style guidelines of this project
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] New and existing unit tests pass locally with my changes
+- [ ] I have checked my code and corrected any misspellings
