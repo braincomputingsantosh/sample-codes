@@ -24,3 +24,65 @@ Key functions:
 This code is part of a data pipeline for managing and updating HELOC data,
 likely in a financial or banking context.
 """
+
+
+def update_source_metadata(spark, metadata_table_name, metadata):
+    """
+    Updates the source metadata in the specified metadata table.
+    
+    Args:
+        spark: SparkSession object
+        metadata_table_name: Name of the table storing metadata
+        metadata: Dictionary containing metadata to be updated
+    
+    This function ensures the process_date is in the correct format and
+    updates the metadata table with the provided information.
+    """
+    # Function implementation...
+
+def extract_file_info(file_path):
+    """
+    Extracts file name and type information from the given file path.
+    
+    Args:
+        file_path: String representing the full path of the file
+    
+    Returns:
+        Dictionary containing 'file_name' and 'file_type'
+    
+    Assumes the file type is CSV for this implementation.
+    """
+    # Function implementation...
+
+def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
+    """
+    Main function to append and update metadata for HELOC data processing.
+    
+    Args:
+        spark: SparkSession object
+        raw_table_name: Name of the raw data table
+        silver_table_name: Name of the processed (silver) data table
+        metadata_table_name: Name of the metadata table
+        as_of_month: The month for which data is being processed
+    
+    This function orchestrates the entire process of reading raw data,
+    updating or appending to the silver table, and managing metadata updates.
+    It handles both successful processing and error scenarios.
+    """
+    # Function implementation...
+
+def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
+    """
+    Processes tables based on specified parameters.
+    
+    Args:
+        spark: SparkSession object
+        raw_table_name: Name of the raw data table
+        silver_table_name: Name of the processed (silver) data table
+        metadata_table_name: Name of the metadata table
+    
+    This function appears to handle the execution of data processing
+    for specific time periods (as_of_month) and manages the overall
+    data flow between raw and silver tables.
+    """
+    # Function implementation...
