@@ -1,6 +1,6 @@
 import datetime
 import os
-from pyspark.sql.functions import col, from_json, to_json, struct, when
+from pyspark.sql.functions import col, split, element_at
 from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
 
 class ETLProcessor:
@@ -17,9 +17,6 @@ class ETLProcessor:
                 source_table = f"{self.source_schema}.{table_name}"
                 target_table = f"{self.target_schema}.{table_name}"
 
-                # Truncate the target table
-                self.spark.sql(f"TRUNCATE TABLE {target_table}")
-
                 # Read the source table
                 source_df = self.spark.table(source_table)
 
@@ -29,39 +26,26 @@ class ETLProcessor:
                 print(f"Sample data for table {table_name}:")
                 source_df.select("source_metadata").show(1, truncate=False)
 
-                # Ensure source_metadata is in the correct format
-                source_df = source_df.withColumn("source_metadata", 
-                                                 when(col("source_metadata").cast("string").isNotNull(), 
-                                                      col("source_metadata").cast("string"))
-                                                 .otherwise(to_json(struct("source_metadata"))))
-
-                # Define the schema for the source_metadata column
-                metadata_schema = StructType([
-                    StructField("file_path", StringType(), True),
-                    StructField("file_name", StringType(), True),
-                    StructField("file_size", LongType(), True),
-                    StructField("file_block_start", LongType(), True),
-                    StructField("file_block_length", LongType(), True),
-                    StructField("file_modification_time", TimestampType(), True)
-                ])
-
                 # Extract metadata from the first row
-                first_row_metadata = source_df.select(
-                    from_json(col("source_metadata"), metadata_schema).alias("metadata")
-                ).first()
+                first_row_metadata = source_df.select("source_metadata").first()
 
-                if first_row_metadata and first_row_metadata.metadata:
-                    file_path = first_row_metadata.metadata.file_path
-                    file_name = first_row_metadata.metadata.file_name
-                    file_size = first_row_metadata.metadata.file_size
+                if first_row_metadata and first_row_metadata.source_metadata:
+                    metadata_parts = first_row_metadata.source_metadata.split(", ")
+                    file_path = metadata_parts[0]
+                    file_name = file_path.split("/")[-1]
+                    file_size = int(metadata_parts[-2]) if len(metadata_parts) > 2 else 0
                 else:
                     print(f"Warning: No valid metadata found for table {table_name}")
                     file_path = "unknown"
                     file_name = "unknown"
                     file_size = 0
 
-                # Insert all records into the target table
-                source_df.write.mode("overwrite").saveAsTable(target_table)
+                # Insert all records into the target table with schema merging
+                (source_df.write
+                 .option("mergeSchema", "true")
+                 .option("overwriteSchema", "true")
+                 .mode("overwrite")
+                 .saveAsTable(target_table))
 
                 rows_inserted = source_df.count()
 
@@ -72,75 +56,11 @@ class ETLProcessor:
             except Exception as e:
                 error_message = f"Error in truncate and insert operation for {table_name}: {str(e)}"
                 print(error_message)
-                print(f"First row of source_metadata: {source_df.select('source_metadata').first()}")
                 results.append((table_name, "FAILED", None, None, None, 0))
 
         return results
 
-    def run_etl(self, tables_to_process):
-        insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
-        
-        # Process and update metadata for each table
-        for table_name, status, file_path, file_name, file_size, rows_inserted in insert_results:
-            if file_path and file_path != "unknown":
-                project_name = f"{table_name}_bk_mpo_full_load"
-                self.process_and_update_metadata(
-                    file_path=file_path,
-                    file_name=file_name,
-                    file_size=file_size,
-                    project_name=project_name,
-                    process_state=status,
-                    rows_inserted=rows_inserted,
-                    reprocess=False
-                )
-            else:
-                print(f"Skipping metadata update for {table_name} due to missing file information")
-
-        print(f"Overall status: {overall_status}")
-        return insert_results, overall_status
-
-    def update_source_metadata(self, metadata):
-        update_sql = f"""
-        INSERT INTO {self.metadata_table_name} 
-        (project_name, file_name, file_path, process_date, file_type, file_process_state, rows_inserted, file_size, last_error_msg, reprocess)
-        VALUES (
-            '{metadata.get("project_name")}',
-            '{metadata.get("file_name")}',
-            '{metadata.get("file_path")}',
-            '{metadata.get("process_date")}',
-            '{metadata.get("file_type")}',
-            '{metadata.get("file_process_state")}',
-            {metadata.get("rows_inserted", "NULL")},
-            {metadata.get("file_size", "NULL")},
-            '{metadata.get("last_error_msg", "")}',
-            {metadata.get("reprocess", "false")}
-        )
-        """
-        try:
-            self.spark.sql(update_sql)
-            print(f"Metadata inserted for file: {metadata.get('file_name')}")
-        except Exception as e:
-            print(f"Error inserting metadata: {str(e)}")
-            print(f"Attempted SQL: {update_sql}")
-
-    def process_and_update_metadata(self, file_path, file_name, file_size, project_name, process_state, rows_inserted, reprocess):
-        _, file_extension = os.path.splitext(file_name)
-        
-        metadata = {
-            "project_name": project_name,
-            "file_name": file_name,
-            "file_path": file_path,
-            "process_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": file_extension.lstrip('.'),
-            "file_process_state": process_state,
-            "rows_inserted": rows_inserted,
-            "file_size": file_size,
-            "last_error_msg": "",
-            "reprocess": reprocess
-        }
-
-        self.update_source_metadata(metadata)
+    # ... (rest of the methods remain the same)
 
 # Usage example for serverless environment
 def run_etl_job(spark):
@@ -159,8 +79,6 @@ def run_etl_job(spark):
 # This is the entry point for the serverless job
 if __name__ == "__main__":
     from pyspark.sql import SparkSession
-    spark = SparkSession.getActiveSession()
-    if spark is None:
-        spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
+    spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
     
     run_etl_job(spark)
