@@ -60,7 +60,70 @@ class ETLProcessor:
 
         return results
 
-    # ... (rest of the methods remain the same)
+    def run_etl(self, tables_to_process):
+        insert_results = self.truncate_and_insert_table_data(tables_to_process)
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
+        
+        # Process and update metadata for each table
+        for table_name, status, file_path, file_name, file_size, rows_inserted in insert_results:
+            if file_path and file_path != "unknown":
+                project_name = f"{table_name}_bk_mpo_full_load"
+                self.process_and_update_metadata(
+                    file_path=file_path,
+                    file_name=file_name,
+                    file_size=file_size,
+                    project_name=project_name,
+                    process_state=status,
+                    rows_inserted=rows_inserted,
+                    reprocess=False
+                )
+            else:
+                print(f"Skipping metadata update for {table_name} due to missing file information")
+
+        print(f"Overall status: {overall_status}")
+        return insert_results, overall_status
+
+    def update_source_metadata(self, metadata):
+        update_sql = f"""
+        INSERT INTO {self.metadata_table_name} 
+        (project_name, file_name, file_path, process_date, file_type, file_process_state, rows_inserted, file_size, last_error_msg, reprocess)
+        VALUES (
+            '{metadata.get("project_name")}',
+            '{metadata.get("file_name")}',
+            '{metadata.get("file_path")}',
+            '{metadata.get("process_date")}',
+            '{metadata.get("file_type")}',
+            '{metadata.get("file_process_state")}',
+            {metadata.get("rows_inserted", "NULL")},
+            {metadata.get("file_size", "NULL")},
+            '{metadata.get("last_error_msg", "")}',
+            {metadata.get("reprocess", "false")}
+        )
+        """
+        try:
+            self.spark.sql(update_sql)
+            print(f"Metadata inserted for file: {metadata.get('file_name')}")
+        except Exception as e:
+            print(f"Error inserting metadata: {str(e)}")
+            print(f"Attempted SQL: {update_sql}")
+
+    def process_and_update_metadata(self, file_path, file_name, file_size, project_name, process_state, rows_inserted, reprocess):
+        _, file_extension = os.path.splitext(file_name)
+        
+        metadata = {
+            "project_name": project_name,
+            "file_name": file_name,
+            "file_path": file_path,
+            "process_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "file_type": file_extension.lstrip('.'),
+            "file_process_state": process_state,
+            "rows_inserted": rows_inserted,
+            "file_size": file_size,
+            "last_error_msg": "",
+            "reprocess": reprocess
+        }
+
+        self.update_source_metadata(metadata)
 
 # Usage example for serverless environment
 def run_etl_job(spark):
