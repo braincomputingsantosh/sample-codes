@@ -1,6 +1,7 @@
 import datetime
-from pyspark.sql.functions import col, struct, lit
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, lit, current_timestamp
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, IntegerType, BooleanType
 
 class ETLProcessor:
     def __init__(self, spark, source_schema, target_schema, metadata_table_name):
@@ -79,17 +80,94 @@ class ETLProcessor:
         return insert_results, overall_status
 
     def update_source_metadata(self, metadata):
-        # Create a DataFrame with the metadata
-        metadata_df = self.spark.createDataFrame([metadata])
+        # Define the schema based on the image
+        metadata_schema = StructType([
+            StructField("id", LongType(), True),
+            StructField("project_name", StringType(), True),
+            StructField("file_name", StringType(), True),
+            StructField("file_path", StringType(), True),
+            StructField("process_date", TimestampType(), True),
+            StructField("file_name_data", StringType(), True),
+            StructField("file_type", StringType(), True),
+            StructField("file_process_state", StringType(), True),
+            StructField("process_start_dtm", TimestampType(), True),
+            StructField("process_end_dtm", TimestampType(), True),
+            StructField("current_worker_host", StringType(), True),
+            StructField("current_worker_host_pid", IntegerType(), True),
+            StructField("rows_inserted", LongType(), True),
+            StructField("data_appended", StringType(), True),
+            StructField("file_size", LongType(), True),
+            StructField("total_rows", LongType(), True),
+            StructField("total_files", IntegerType(), True),
+            StructField("total_files_processed", IntegerType(), True),
+            StructField("last_error_msg", StringType(), True),
+            StructField("database_table", StringType(), True),
+            StructField("parent_file_id", IntegerType(), True),
+            StructField("crc", StringType(), True),
+            StructField("upsert_time", TimestampType(), True),
+            StructField("publish_time", TimestampType(), True),
+            StructField("upsert_function_name", StringType(), True),
+            StructField("process_order", IntegerType(), True),
+            StructField("reprocess", BooleanType(), True),
+            StructField("duplicate_file", BooleanType(), True),
+            StructField("process_msg_trail", StringType(), True),
+            StructField("legacy_file_id", IntegerType(), True),
+            StructField("source_table", StringType(), True),
+            StructField("file_block_length", StringType(), True),
+            StructField("processed_time", TimestampType(), True),
+            StructField("file_extension", StringType(), True)
+        ])
+
+        # Create a DataFrame with the metadata, filling in missing fields with default values
+        current_time = current_timestamp()
+        metadata_df = self.spark.createDataFrame([{
+            "id": None,  # This will be auto-generated
+            "project_name": metadata.get("project_name"),
+            "file_name": metadata.get("file_name"),
+            "file_path": metadata.get("file_path"),
+            "process_date": metadata.get("process_date", current_time),
+            "file_name_data": metadata.get("file_name"),  # Assuming this is the same as file_name
+            "file_type": metadata.get("file_type"),
+            "file_process_state": metadata.get("file_process_state"),
+            "process_start_dtm": current_time,
+            "process_end_dtm": current_time,
+            "current_worker_host": metadata.get("current_worker_host", ""),
+            "current_worker_host_pid": metadata.get("current_worker_host_pid", 0),
+            "rows_inserted": metadata.get("rows_inserted", 0),
+            "data_appended": "N",  # Default value, adjust if needed
+            "file_size": metadata.get("file_size", 0),
+            "total_rows": metadata.get("rows_inserted", 0),  # Assuming total_rows is the same as rows_inserted
+            "total_files": 1,  # Assuming we're processing one file at a time
+            "total_files_processed": 1,
+            "last_error_msg": metadata.get("last_error_msg", ""),
+            "database_table": f"{self.target_schema}.{metadata.get('project_name').split('_')[0]}",
+            "parent_file_id": None,
+            "crc": "",  # You may want to calculate this
+            "upsert_time": current_time,
+            "publish_time": current_time,
+            "upsert_function_name": "etl_processor",
+            "process_order": 1,  # Default value, adjust if needed
+            "reprocess": metadata.get("reprocess", False),
+            "duplicate_file": False,  # Default value, adjust if needed
+            "process_msg_trail": "",
+            "legacy_file_id": None,
+            "source_table": f"{self.source_schema}.{metadata.get('project_name').split('_')[0]}",
+            "file_block_length": str(metadata.get("file_size", 0)),
+            "processed_time": current_time,
+            "file_extension": metadata.get("file_type", "")
+        }], schema=metadata_schema)
 
         # Write the metadata to the table
         try:
             (metadata_df.write
              .mode("append")
+             .option("mergeSchema", "true")
              .saveAsTable(self.metadata_table_name))
             print(f"Metadata inserted for file: {metadata['file_name']}")
         except Exception as e:
             print(f"Error inserting metadata: {str(e)}")
+            print("Attempted to insert the following data:")
+            metadata_df.show(truncate=False)
 
     def process_and_update_metadata(self, file_path, file_name, file_size, project_name, process_state, rows_inserted, reprocess):
         metadata = {
@@ -102,18 +180,8 @@ class ETLProcessor:
             "rows_inserted": rows_inserted,
             "file_size": file_size,
             "last_error_msg": "",
-            "reprocess": reprocess,
-            "source_metadata": {
-                "file_path": file_path,
-                "file_name": file_name,
-                "file_size": file_size,
-                "file_block_start": 0,  # You may need to adjust this
-                "file_block_length": file_size,  # You may need to adjust this
-                "file_modification_time": datetime.datetime.now(),
-                "ingest_time": datetime.datetime.now()
-            }
+            "reprocess": reprocess
         }
-
         self.update_source_metadata(metadata)
 
 # Usage example for serverless environment
@@ -132,7 +200,5 @@ def run_etl_job(spark):
 
 # This is the entry point for the serverless job
 if __name__ == "__main__":
-    from pyspark.sql import SparkSession
     spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
-    
     run_etl_job(spark)
