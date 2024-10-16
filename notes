@@ -1,29 +1,26 @@
 """
-ETL Process for BK MPO Data Pipeline
+HELOC Data Append and Update Source
 
-This script implements an ETL (Extract, Transform, Load) process for handling data from multiple tables
-in a staging schema and loading it into a processed schema. It also records metadata about each operation.
+This script performs the following operations:
+1. Updates source metadata for HELOC (Home Equity Line of Credit) data.
+2. Appends and updates records in a target table (likely a 'silver' table in a data lake architecture).
+3. Handles data processing for raw and silver tables, including:
+   - Reading data from a raw table
+   - Checking for existing data in the silver table
+   - Appending new data or updating existing records
+   - Updating file metadata (e.g., file path, process date, status)
+4. Implements error handling and logging for the data processing pipeline
+5. Executes data processing for specific time periods (as_of_month)
 
-Key Features:
-1. Processes multiple tables: loan, loan_current, loan_delinquency_history, and loan_lookup.
-2. Extracts data from a source schema (staging.bk_mpo_raw) and loads it into a target schema (staging.bk_mpo_processed).
-3. Uses schema merging to handle potential schema evolution between source and target tables.
-4. Captures and stores metadata for each processed table, including:
-   - Unique ID (based on UNIX timestamp)
-   - File path, name, and type
-   - Project name
-   - Processing date and state
-   - Number of rows inserted
-   - Reprocess flag (set to True for failed operations, False for successful ones)
-5. Implements error handling and logging throughout the ETL process.
-6. Designed to run in a serverless Spark environment.
+The script uses PySpark for data manipulation and is designed to work with
+large-scale data processing in a distributed computing environment.
 
-Usage:
-- Ensure that the necessary Spark environment and dependencies are set up.
-- The main ETL job is initiated by the run_etl_job function, which creates an ETLProcessor instance
-  and processes the specified tables.
-- Metadata for each operation is stored in the test_bk_mpo.source_metadata_new table.
+Key functions:
+- update_source_metadata: Updates metadata for the source files
+- extract_file_info: Extracts information from file paths
+- append_and_update_metadata: Main function for appending and updating data
+- process_table: Processes tables based on specified parameters
 
-Note: This script is designed to be run as a standalone Spark job. Ensure that the source and target
-schemas, as well as the metadata table, exist and are accessible in your Spark environment.
+This code is part of a data pipeline for managing and updating HELOC data,
+likely in a financial or banking context.
 """
