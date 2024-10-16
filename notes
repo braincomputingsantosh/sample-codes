@@ -1,157 +1,131 @@
-from pyspark.sql.functions import col, lit, current_timestamp, when, expr
-from pyspark.sql.types import StringType, LongType
-from datetime import datetime
-import traceback
+import datetime
+from pyspark.sql.functions import col, from_json, lit
+from pyspark.sql.types import StructType, StructField, StringType, LongType
 
-def update_source_metadata(spark, metadata_table_name, metadata):
-    # Ensure process_date is in the correct format
-    if isinstance(metadata['process_date'], str):
-        metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
-    
-    # Create a DataFrame from the metadata
-    metadata_df = spark.createDataFrame([metadata])
-    
-    # Add ID column using UNIX timestamp
-    metadata_df = metadata_df.withColumn("id", expr("CAST(UNIX_TIMESTAMP() * 1000000 AS BIGINT)"))
-    
-    # Ensure 'reprocess' is always a string and handle NULL values
-    metadata_df = metadata_df.withColumn(
-        "reprocess",
-        when(col("reprocess").isNull(), "false")
-        .otherwise(col("reprocess").cast(StringType()))
-    )
-    
-    # Get the schema of the target table
-    target_schema = spark.table(metadata_table_name).schema
-    
-    # Cast the columns of metadata_df to match the target schema
-    for field in target_schema.fields:
-        if field.name in metadata_df.columns:
-            metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
-    
-    # Delete existing record if it exists
-    spark.sql(f"""
-    DELETE FROM {metadata_table_name}
-    WHERE file_path = '{metadata['file_path']}'
-    """)
-    
-    # Insert the new or updated record
-    metadata_df.write.mode("append").saveAsTable(metadata_table_name)
-    
-    print(f"Metadata updated for file: {metadata['file_name']}")
+class ETLProcessor:
+    def __init__(self, spark, source_schema, target_schema, metadata_table_name):
+        self.spark = spark
+        self.source_schema = source_schema
+        self.target_schema = target_schema
+        self.metadata_table_name = metadata_table_name
 
-def extract_file_info(file_path):
-    return {
-        "file_name": file_path.split("/")[-1],
-        "file_type": "csv"  # Assume CSV for now
-    }
+    def truncate_and_insert_table_data(self, tables):
+        results = []
+        for table_name in tables:
+            try:
+                source_table = f"{self.source_schema}.{table_name}"
+                target_table = f"{self.target_schema}.{table_name}"
 
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
-    try:
-        # Construct full table names
-        raw_table = f"bk_mpo_raw.{raw_table_name}"
-        silver_table = f"test_bk_mpo.{silver_table_name}_silver"
+                # Truncate the target table
+                self.spark.sql(f"TRUNCATE TABLE {target_table}")
+
+                # Read the source table
+                source_df = self.spark.table(source_table)
+
+                # Define the schema for the source_metadata column
+                metadata_schema = StructType([
+                    StructField("file_path", StringType(), True),
+                    StructField("file_name", StringType(), True),
+                    StructField("file_size", LongType(), True)
+                ])
+
+                # Extract metadata from the first row
+                first_row_metadata = source_df.select(
+                    from_json(col("source_metadata"), metadata_schema).alias("metadata")
+                ).first()
+
+                if first_row_metadata:
+                    file_path = first_row_metadata.metadata.file_path
+                    file_name = first_row_metadata.metadata.file_name
+                    file_size = first_row_metadata.metadata.file_size
+                else:
+                    raise ValueError(f"No metadata found for table {table_name}")
+
+                # Insert all records into the target table
+                source_df.write.mode("overwrite").saveAsTable(target_table)
+
+                rows_inserted = source_df.count()
+
+                print(f"Truncate and insert operation completed for {table_name}")
+                print(f"Source: {source_table}")
+                print(f"Target: {target_table}")
+                results.append((table_name, "SUCCESS", file_path, file_name, file_size, rows_inserted))
+            except Exception as e:
+                error_message = f"Error in truncate and insert operation for {table_name}: {str(e)}"
+                print(error_message)
+                results.append((table_name, "FAILED", None, None, None, 0))
+
+        return results
+
+    def run_etl(self, tables_to_process):
+        insert_results = self.truncate_and_insert_table_data(tables_to_process)
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
         
-        # Read the raw table
-        raw_df = spark.table(raw_table)
+        # Process and update metadata for each table
+        for table_name, status, file_path, file_name, file_size, rows_inserted in insert_results:
+            if file_path:
+                project_name = f"{table_name}_bk_mpo_full_load"
+                self.process_and_update_metadata(
+                    file_path=file_path,
+                    file_name=file_name,
+                    file_size=file_size,
+                    project_name=project_name,
+                    process_state=status,
+                    rows_inserted=rows_inserted,
+                    reprocess=False
+                )
+
+        print(f"Overall status: {overall_status}")
+        return insert_results, overall_status
+
+    def update_source_metadata(self, metadata):
+        update_sql = f"""
+        INSERT INTO {self.metadata_table_name} 
+        (project_name, file_name, file_path, process_date, file_type, file_process_state, rows_inserted, file_size, last_error_msg, reprocess)
+        VALUES (
+            '{metadata.get("project_name")}',
+            '{metadata.get("file_name")}',
+            '{metadata.get("file_path")}',
+            '{metadata.get("process_date")}',
+            '{metadata.get("file_type")}',
+            '{metadata.get("file_process_state")}',
+            {metadata.get("rows_inserted", "NULL")},
+            {metadata.get("file_size", "NULL")},
+            '{metadata.get("last_error_msg", "")}',
+            {metadata.get("reprocess", "false")}
+        )
+        """
+        self.spark.sql(update_sql)
+        print(f"Metadata inserted for file: {metadata.get('file_name')}")
+
+    def process_and_update_metadata(self, file_path, file_name, file_size, project_name, process_state, rows_inserted, reprocess):
+        _, file_extension = os.path.splitext(file_name)
         
-        # Extract file_path from source_metadata in the raw table
-        file_path = raw_df.filter(col("as_of_month") == as_of_month) \
-                          .select(col("source_metadata.file_path")).first()[0]
-        
-        # Check if data for this as_of_month exists in silver table
-        silver_df = spark.table(silver_table)
-        existing_data = silver_df.filter(col("as_of_month") == as_of_month)
-        
-        if existing_data.count() == 0:
-            # Data doesn't exist in silver table, proceed with append
-            columns_to_append = [col for col in raw_df.columns if col != "source_metadata"]
-            data_to_append = raw_df.filter(col("as_of_month") == as_of_month) \
-                                   .select(columns_to_append) \
-                                   .withColumn("file_path", lit(file_path)) \
-                                   .withColumn("ingest_time", current_timestamp())
-            
-            # Append the data to the silver table
-            data_to_append.write.mode("append").saveAsTable(silver_table)
-            
-            rows_inserted = data_to_append.count()
-            process_state = "PROCESSED"
-        else:
-            # Data exists in silver table, update file_path and ingest_time
-            spark.sql(f"""
-            UPDATE {silver_table}
-            SET file_path = '{file_path}', ingest_time = current_timestamp()
-            WHERE as_of_month = {as_of_month}
-            """)
-            
-            rows_inserted = 0
-            process_state = "UPDATED"
-        
-        # Extract file info
-        file_info = extract_file_info(file_path)
-        
-        # Prepare metadata
         metadata = {
-            "project_name": "bk_mpo",
-            "file_name": file_info["file_name"],
+            "project_name": project_name,
+            "file_name": file_name,
             "file_path": file_path,
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": file_info["file_type"],
+            "process_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "file_type": file_extension.lstrip('.'),
             "file_process_state": process_state,
             "rows_inserted": rows_inserted,
+            "file_size": file_size,
             "last_error_msg": "",
-            "reprocess": "false"
+            "reprocess": reprocess
         }
-        
-        # Update metadata using the new function
-        update_source_metadata(spark, metadata_table_name, metadata)
-        
-        print(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}")
-        return "PROCESSED"
-    
-    except Exception as e:
-        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}\n{traceback.format_exc()}"
-        
-        # Update metadata with error information
-        metadata = {
-            "project_name": "bk_mpo",
-            "file_name": file_path.split("/")[-1],
-            "file_path": file_path,
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": "unknown",
-            "file_process_state": "FAILED",
-            "rows_inserted": 0,
-            "last_error_msg": error_message[:255],  # Truncate error message if necessary
-            "reprocess": "true"
-        }
-        update_source_metadata(spark, metadata_table_name, metadata)
-        
-        print(error_message)
-        return "FAILED"
 
-def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
-    # Execute the EXCEPT query
-    diff_df = spark.sql(f"""
-    SELECT as_of_month FROM bk_mpo_raw.{raw_table_name}
-    EXCEPT
-    SELECT as_of_month FROM test_bk_mpo.{silver_table_name}_silver
-    """)
-    
-    # Get the list of as_of_month values to process
-    as_of_months_to_process = [row.as_of_month for row in diff_df.collect()]
-    
-    results = []
-    for as_of_month in as_of_months_to_process:
-        result = append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month)
-        results.append((as_of_month, result))
-    
-    return results
+        self.update_source_metadata(metadata)
 
-# Example usage
-raw_table_name = "heloc"
-silver_table_name = "heloc"
-metadata_table_name = "test_bk_mpo.source_metadata_new"
-processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
+# Usage example
+spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
+etl_processor = ETLProcessor(spark, 
+                             source_schema="source_schema", 
+                             target_schema="target_schema", 
+                             metadata_table_name="test_bk_mpo.source_metadata_new")
 
-for as_of_month, result in processing_results:
-    print(f"as_of_month: {as_of_month}, Result: {result}")
+tables_to_process = ["table1", "table2", "table3"]
+results, overall_status = etl_processor.run_etl(tables_to_process)
+
+print(f"ETL Process completed with status: {overall_status}")
+for table, status, file_path, file_name, file_size, rows_inserted in results:
+    print(f"Table: {table}, Status: {status}, File: {file_name}, Rows Inserted: {rows_inserted}")
