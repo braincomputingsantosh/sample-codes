@@ -1,4 +1,5 @@
 import datetime
+import os
 from pyspark.sql.functions import col, from_json, lit
 from pyspark.sql.types import StructType, StructField, StringType, LongType
 
@@ -116,16 +117,25 @@ class ETLProcessor:
 
         self.update_source_metadata(metadata)
 
-# Usage example
-spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
-etl_processor = ETLProcessor(spark, 
-                             source_schema="source_schema", 
-                             target_schema="target_schema", 
-                             metadata_table_name="test_bk_mpo.source_metadata_new")
+# Usage example for serverless environment
+def run_etl_job(spark):
+    etl_processor = ETLProcessor(spark, 
+                                 source_schema="source_schema", 
+                                 target_schema="target_schema", 
+                                 metadata_table_name="test_bk_mpo.source_metadata_new")
 
-tables_to_process = ["table1", "table2", "table3"]
-results, overall_status = etl_processor.run_etl(tables_to_process)
+    tables_to_process = ["table1", "table2", "table3"]
+    results, overall_status = etl_processor.run_etl(tables_to_process)
 
-print(f"ETL Process completed with status: {overall_status}")
-for table, status, file_path, file_name, file_size, rows_inserted in results:
-    print(f"Table: {table}, Status: {status}, File: {file_name}, Rows Inserted: {rows_inserted}")
+    print(f"ETL Process completed with status: {overall_status}")
+    for table, status, file_path, file_name, file_size, rows_inserted in results:
+        print(f"Table: {table}, Status: {status}, File: {file_name}, Rows Inserted: {rows_inserted}")
+
+# This is the entry point for the serverless job
+if __name__ == "__main__":
+    from pyspark.sql import SparkSession
+    spark = SparkSession.getActiveSession()
+    if spark is None:
+        spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
+    
+    run_etl_job(spark)
