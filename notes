@@ -1,7 +1,7 @@
 import datetime
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, lit, current_timestamp
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, IntegerType, BooleanType
+from pyspark.sql.functions import lit
+from pyspark.sql.types import StructType, StructField, StringType
 
 class ETLProcessor:
     def __init__(self, spark, source_schema, target_schema, metadata_table_name):
@@ -29,13 +29,11 @@ class ETLProcessor:
                 # Extract metadata from the first row
                 first_row_metadata = source_df.select("source_metadata.*").first()
 
-                if first_row_metadata:
+                if first_row_metadata and hasattr(first_row_metadata, 'file_path'):
                     file_path = first_row_metadata.file_path
-                    file_name = first_row_metadata.file_name
-                    file_size = first_row_metadata.file_size
                 else:
-                    print(f"Warning: No valid metadata found for table {table_name}")
-                    file_path, file_name, file_size = "unknown", "unknown", 0
+                    print(f"Warning: No valid file_path found for table {table_name}")
+                    file_path = "unknown"
 
                 # Insert all records into the target table with schema merging
                 (source_df.write
@@ -48,114 +46,35 @@ class ETLProcessor:
                 print(f"Insert operation completed for {table_name}")
                 print(f"Source: {source_table}")
                 print(f"Target: {target_table}")
-                results.append((table_name, "SUCCESS", file_path, file_name, file_size, rows_inserted))
+                results.append((table_name, "SUCCESS", file_path, rows_inserted))
             except Exception as e:
                 error_message = f"Error in insert operation for {table_name}: {str(e)}"
                 print(error_message)
-                results.append((table_name, "FAILED", None, None, None, 0))
+                results.append((table_name, "FAILED", "unknown", 0))
 
         return results
 
     def run_etl(self, tables_to_process):
         insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _ in insert_results) else "FAILED"
         
         # Process and update metadata for each table
-        for table_name, status, file_path, file_name, file_size, rows_inserted in insert_results:
-            if file_path and file_path != "unknown":
-                project_name = f"{table_name}_bk_mpo_full_load"
-                self.process_and_update_metadata(
-                    file_path=file_path,
-                    file_name=file_name,
-                    file_size=file_size,
-                    project_name=project_name,
-                    process_state=status,
-                    rows_inserted=rows_inserted,
-                    reprocess=False
-                )
-            else:
-                print(f"Skipping metadata update for {table_name} due to missing file information")
+        for table_name, status, file_path, rows_inserted in insert_results:
+            project_name = f"{table_name}_bk_mpo_full_load"
+            self.update_source_metadata(file_path, project_name)
 
         print(f"Overall status: {overall_status}")
         return insert_results, overall_status
 
-    def update_source_metadata(self, metadata):
-        # Define the schema based on the image
+    def update_source_metadata(self, file_path, project_name):
+        # Define the schema for our simplified metadata
         metadata_schema = StructType([
-            StructField("id", LongType(), True),
-            StructField("project_name", StringType(), True),
-            StructField("file_name", StringType(), True),
             StructField("file_path", StringType(), True),
-            StructField("process_date", TimestampType(), True),
-            StructField("file_name_data", StringType(), True),
-            StructField("file_type", StringType(), True),
-            StructField("file_process_state", StringType(), True),
-            StructField("process_start_dtm", TimestampType(), True),
-            StructField("process_end_dtm", TimestampType(), True),
-            StructField("current_worker_host", StringType(), True),
-            StructField("current_worker_host_pid", IntegerType(), True),
-            StructField("rows_inserted", LongType(), True),
-            StructField("data_appended", StringType(), True),
-            StructField("file_size", LongType(), True),
-            StructField("total_rows", LongType(), True),
-            StructField("total_files", IntegerType(), True),
-            StructField("total_files_processed", IntegerType(), True),
-            StructField("last_error_msg", StringType(), True),
-            StructField("database_table", StringType(), True),
-            StructField("parent_file_id", IntegerType(), True),
-            StructField("crc", StringType(), True),
-            StructField("upsert_time", TimestampType(), True),
-            StructField("publish_time", TimestampType(), True),
-            StructField("upsert_function_name", StringType(), True),
-            StructField("process_order", IntegerType(), True),
-            StructField("reprocess", BooleanType(), True),
-            StructField("duplicate_file", BooleanType(), True),
-            StructField("process_msg_trail", StringType(), True),
-            StructField("legacy_file_id", IntegerType(), True),
-            StructField("source_table", StringType(), True),
-            StructField("file_block_length", StringType(), True),
-            StructField("processed_time", TimestampType(), True),
-            StructField("file_extension", StringType(), True)
+            StructField("project_name", StringType(), True)
         ])
 
-        # Create a DataFrame with the metadata, filling in missing fields with default values
-        current_time = current_timestamp()
-        metadata_df = self.spark.createDataFrame([{
-            "id": None,  # This will be auto-generated
-            "project_name": metadata.get("project_name"),
-            "file_name": metadata.get("file_name"),
-            "file_path": metadata.get("file_path"),
-            "process_date": metadata.get("process_date", current_time),
-            "file_name_data": metadata.get("file_name"),  # Assuming this is the same as file_name
-            "file_type": metadata.get("file_type"),
-            "file_process_state": metadata.get("file_process_state"),
-            "process_start_dtm": current_time,
-            "process_end_dtm": current_time,
-            "current_worker_host": metadata.get("current_worker_host", ""),
-            "current_worker_host_pid": metadata.get("current_worker_host_pid", 0),
-            "rows_inserted": metadata.get("rows_inserted", 0),
-            "data_appended": "N",  # Default value, adjust if needed
-            "file_size": metadata.get("file_size", 0),
-            "total_rows": metadata.get("rows_inserted", 0),  # Assuming total_rows is the same as rows_inserted
-            "total_files": 1,  # Assuming we're processing one file at a time
-            "total_files_processed": 1,
-            "last_error_msg": metadata.get("last_error_msg", ""),
-            "database_table": f"{self.target_schema}.{metadata.get('project_name').split('_')[0]}",
-            "parent_file_id": None,
-            "crc": "",  # You may want to calculate this
-            "upsert_time": current_time,
-            "publish_time": current_time,
-            "upsert_function_name": "etl_processor",
-            "process_order": 1,  # Default value, adjust if needed
-            "reprocess": metadata.get("reprocess", False),
-            "duplicate_file": False,  # Default value, adjust if needed
-            "process_msg_trail": "",
-            "legacy_file_id": None,
-            "source_table": f"{self.source_schema}.{metadata.get('project_name').split('_')[0]}",
-            "file_block_length": str(metadata.get("file_size", 0)),
-            "processed_time": current_time,
-            "file_extension": metadata.get("file_type", "")
-        }], schema=metadata_schema)
+        # Create a DataFrame with the metadata
+        metadata_df = self.spark.createDataFrame([(file_path, project_name)], schema=metadata_schema)
 
         # Write the metadata to the table
         try:
@@ -163,26 +82,11 @@ class ETLProcessor:
              .mode("append")
              .option("mergeSchema", "true")
              .saveAsTable(self.metadata_table_name))
-            print(f"Metadata inserted for file: {metadata['file_name']}")
+            print(f"Metadata inserted for project: {project_name}")
         except Exception as e:
             print(f"Error inserting metadata: {str(e)}")
             print("Attempted to insert the following data:")
             metadata_df.show(truncate=False)
-
-    def process_and_update_metadata(self, file_path, file_name, file_size, project_name, process_state, rows_inserted, reprocess):
-        metadata = {
-            "project_name": project_name,
-            "file_name": file_name,
-            "file_path": file_path,
-            "process_date": datetime.datetime.now(),
-            "file_type": file_name.split('.')[-1] if '.' in file_name else "",
-            "file_process_state": process_state,
-            "rows_inserted": rows_inserted,
-            "file_size": file_size,
-            "last_error_msg": "",
-            "reprocess": reprocess
-        }
-        self.update_source_metadata(metadata)
 
 # Usage example for serverless environment
 def run_etl_job(spark):
@@ -195,8 +99,8 @@ def run_etl_job(spark):
     results, overall_status = etl_processor.run_etl(tables_to_process)
 
     print(f"ETL Process completed with status: {overall_status}")
-    for table, status, file_path, file_name, file_size, rows_inserted in results:
-        print(f"Table: {table}, Status: {status}, File: {file_name}, Rows Inserted: {rows_inserted}")
+    for table, status, file_path, rows_inserted in results:
+        print(f"Table: {table}, Status: {status}, File Path: {file_path}, Rows Inserted: {rows_inserted}")
 
 # This is the entry point for the serverless job
 if __name__ == "__main__":
