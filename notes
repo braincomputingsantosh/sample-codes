@@ -1,7 +1,7 @@
 import datetime
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import lit
-from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.functions import unix_timestamp, current_timestamp, lit
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
 
 class ETLProcessor:
     def __init__(self, spark, source_schema, target_schema, metadata_table_name):
@@ -29,11 +29,13 @@ class ETLProcessor:
                 # Extract metadata from the first row
                 first_row_metadata = source_df.select("source_metadata.*").first()
 
-                if first_row_metadata and hasattr(first_row_metadata, 'file_path'):
-                    file_path = first_row_metadata.file_path
+                if first_row_metadata:
+                    file_path = getattr(first_row_metadata, 'file_path', "unknown")
+                    file_name = getattr(first_row_metadata, 'file_name', "unknown")
+                    file_type = getattr(first_row_metadata, 'file_type', "")
                 else:
-                    print(f"Warning: No valid file_path found for table {table_name}")
-                    file_path = "unknown"
+                    print(f"Warning: No valid metadata found for table {table_name}")
+                    file_path, file_name, file_type = "unknown", "unknown", ""
 
                 # Insert all records into the target table with schema merging
                 (source_df.write
@@ -46,35 +48,52 @@ class ETLProcessor:
                 print(f"Insert operation completed for {table_name}")
                 print(f"Source: {source_table}")
                 print(f"Target: {target_table}")
-                results.append((table_name, "SUCCESS", file_path, rows_inserted))
+                results.append((table_name, "SUCCESS", file_path, file_name, file_type, rows_inserted))
             except Exception as e:
                 error_message = f"Error in insert operation for {table_name}: {str(e)}"
                 print(error_message)
-                results.append((table_name, "FAILED", "unknown", 0))
+                results.append((table_name, "FAILED", "unknown", "unknown", "", 0))
 
         return results
 
     def run_etl(self, tables_to_process):
         insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _ in insert_results) else "FAILED"
+        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
         
         # Process and update metadata for each table
-        for table_name, status, file_path, rows_inserted in insert_results:
+        for table_name, status, file_path, file_name, file_type, rows_inserted in insert_results:
             project_name = f"{table_name}_bk_mpo_full_load"
-            self.update_source_metadata(file_path, project_name)
+            self.update_source_metadata(file_path, project_name, file_name, status, file_type)
 
         print(f"Overall status: {overall_status}")
         return insert_results, overall_status
 
-    def update_source_metadata(self, file_path, project_name):
-        # Define the schema for our simplified metadata
+    def update_source_metadata(self, file_path, project_name, file_name, file_process_state, file_type):
+        # Define the schema for our expanded metadata
         metadata_schema = StructType([
+            StructField("id", LongType(), False),
             StructField("file_path", StringType(), True),
-            StructField("project_name", StringType(), True)
+            StructField("project_name", StringType(), True),
+            StructField("file_name", StringType(), True),
+            StructField("process_date", TimestampType(), True),
+            StructField("file_process_state", StringType(), True),
+            StructField("file_type", StringType(), True)
         ])
 
         # Create a DataFrame with the metadata
-        metadata_df = self.spark.createDataFrame([(file_path, project_name)], schema=metadata_schema)
+        metadata_df = self.spark.createDataFrame([(
+            None,  # id will be filled with UNIX_TIMESTAMP()
+            file_path,
+            project_name,
+            file_name,
+            None,  # process_date will be filled with current_timestamp()
+            file_process_state,
+            file_type
+        )], schema=metadata_schema)
+
+        # Add UNIX_TIMESTAMP() for id and current_timestamp() for process_date
+        metadata_df = metadata_df.withColumn("id", unix_timestamp().cast(LongType()))
+        metadata_df = metadata_df.withColumn("process_date", current_timestamp())
 
         # Write the metadata to the table
         try:
@@ -99,8 +118,8 @@ def run_etl_job(spark):
     results, overall_status = etl_processor.run_etl(tables_to_process)
 
     print(f"ETL Process completed with status: {overall_status}")
-    for table, status, file_path, rows_inserted in results:
-        print(f"Table: {table}, Status: {status}, File Path: {file_path}, Rows Inserted: {rows_inserted}")
+    for table, status, file_path, file_name, file_type, rows_inserted in results:
+        print(f"Table: {table}, Status: {status}, File: {file_name}, Type: {file_type}, Rows Inserted: {rows_inserted}")
 
 # This is the entry point for the serverless job
 if __name__ == "__main__":
