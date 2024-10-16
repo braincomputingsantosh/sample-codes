@@ -1,146 +1,29 @@
-import datetime
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import unix_timestamp, current_timestamp, lit, coalesce
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType, BooleanType
+"""
+ETL Process for BK MPO Data Pipeline
 
-class ETLProcessor:
-    def __init__(self, spark, source_schema, target_schema, metadata_table_name):
-        self.spark = spark
-        self.source_schema = source_schema
-        self.target_schema = target_schema
-        self.metadata_table_name = metadata_table_name
+This script implements an ETL (Extract, Transform, Load) process for handling data from multiple tables
+in a staging schema and loading it into a processed schema. It also records metadata about each operation.
 
-    def truncate_and_insert_table_data(self, tables):
-        results = []
-        for table_name in tables:
-            try:
-                source_table = f"{self.source_schema}.{table_name}"
-                target_table = f"{self.target_schema}.{table_name}"
+Key Features:
+1. Processes multiple tables: loan, loan_current, loan_delinquency_history, and loan_lookup.
+2. Extracts data from a source schema (staging.bk_mpo_raw) and loads it into a target schema (staging.bk_mpo_processed).
+3. Uses schema merging to handle potential schema evolution between source and target tables.
+4. Captures and stores metadata for each processed table, including:
+   - Unique ID (based on UNIX timestamp)
+   - File path, name, and type
+   - Project name
+   - Processing date and state
+   - Number of rows inserted
+   - Reprocess flag (set to True for failed operations, False for successful ones)
+5. Implements error handling and logging throughout the ETL process.
+6. Designed to run in a serverless Spark environment.
 
-                # Read the source table
-                source_df = self.spark.table(source_table)
+Usage:
+- Ensure that the necessary Spark environment and dependencies are set up.
+- The main ETL job is initiated by the run_etl_job function, which creates an ETLProcessor instance
+  and processes the specified tables.
+- Metadata for each operation is stored in the test_bk_mpo.source_metadata_new table.
 
-                # Print schema and sample data for debugging
-                print(f"Schema for table {table_name}:")
-                source_df.printSchema()
-                print(f"Sample data for table {table_name}:")
-                source_df.select("source_metadata").show(1, truncate=False)
-
-                # Extract metadata from the first row
-                first_row_metadata = source_df.select("source_metadata.*").first()
-
-                if first_row_metadata:
-                    file_path = getattr(first_row_metadata, 'file_path', "unknown")
-                    file_name = getattr(first_row_metadata, 'file_name', "unknown")
-                    file_type = getattr(first_row_metadata, 'file_type', "")
-                else:
-                    print(f"Warning: No valid metadata found for table {table_name}")
-                    file_path, file_name, file_type = "unknown", "unknown", ""
-
-                # Insert all records into the target table with schema merging
-                (source_df.write
-                 .option("mergeSchema", "true")
-                 .mode("overwrite")
-                 .saveAsTable(target_table))
-
-                rows_inserted = source_df.count()
-
-                print(f"Insert operation completed for {table_name}")
-                print(f"Source: {source_table}")
-                print(f"Target: {target_table}")
-                results.append((table_name, "SUCCESS", file_path, file_name, file_type, rows_inserted))
-            except Exception as e:
-                error_message = f"Error in insert operation for {table_name}: {str(e)}"
-                print(error_message)
-                results.append((table_name, "FAILED", "unknown", "unknown", "", 0))
-
-        return results
-
-    def run_etl(self, tables_to_process):
-        insert_results = self.truncate_and_insert_table_data(tables_to_process)
-        overall_status = "SUCCESS" if all(status == "SUCCESS" for _, status, _, _, _, _ in insert_results) else "FAILED"
-        
-        # Process and update metadata for each table
-        for table_name, status, file_path, file_name, file_type, rows_inserted in insert_results:
-            project_name = f"{table_name}_bk_mpo_full_load"
-            reprocess = status != "SUCCESS"
-            self.update_source_metadata(file_path, project_name, file_name, status, file_type, rows_inserted, reprocess)
-
-        print(f"Overall status: {overall_status}")
-        return insert_results, overall_status
-
-    def update_source_metadata(self, file_path, project_name, file_name, file_process_state, file_type, rows_inserted, reprocess):
-        # Define the schema for our expanded metadata
-        metadata_schema = StructType([
-            StructField("id", LongType(), False),
-            StructField("file_path", StringType(), True),
-            StructField("project_name", StringType(), True),
-            StructField("file_name", StringType(), True),
-            StructField("process_date", TimestampType(), True),
-            StructField("file_process_state", StringType(), True),
-            StructField("file_type", StringType(), True),
-            StructField("rows_inserted", LongType(), True),
-            StructField("reprocess", BooleanType(), True)
-        ])
-
-        # Create a DataFrame with the metadata
-        metadata_df = self.spark.createDataFrame([(
-            0,  # Placeholder for id, will be replaced
-            file_path or "unknown",
-            project_name or "unknown",
-            file_name or "unknown",
-            None,  # Placeholder for process_date, will be replaced
-            file_process_state or "unknown",
-            file_type or "",
-            rows_inserted,
-            reprocess
-        )], schema=metadata_schema)
-
-        # Add UNIX_TIMESTAMP() for id and current_timestamp() for process_date
-        metadata_df = metadata_df.withColumn("id", unix_timestamp().cast(LongType()))
-        metadata_df = metadata_df.withColumn("process_date", current_timestamp())
-
-        # Ensure no null values in non-nullable columns
-        for field in metadata_schema.fields:
-            if not field.nullable:
-                metadata_df = metadata_df.withColumn(
-                    field.name,
-                    coalesce(metadata_df[field.name], 
-                             lit("unknown") if field.dataType == StringType() 
-                             else (lit(False) if field.dataType == BooleanType() else lit(0)))
-                )
-
-        # Show the DataFrame before writing (for debugging)
-        print("Metadata to be inserted:")
-        metadata_df.show(truncate=False)
-
-        # Write the metadata to the table
-        try:
-            (metadata_df.write
-             .mode("append")
-             .option("mergeSchema", "true")
-             .saveAsTable(self.metadata_table_name))
-            print(f"Metadata inserted for project: {project_name}")
-        except Exception as e:
-            print(f"Error inserting metadata: {str(e)}")
-            print("Attempted to insert the following data:")
-            metadata_df.show(truncate=False)
-
-# Usage example for serverless environment
-def run_etl_job(spark):
-    etl_processor = ETLProcessor(spark, 
-                                 source_schema="staging.bk_mpo_raw", 
-                                 target_schema="staging.bk_mpo_processed", 
-                                 metadata_table_name="test_bk_mpo.source_metadata_new")
-
-    tables_to_process = ["loan", "loan_current", "loan_delinquency_history", "loan_lookup"]
-    results, overall_status = etl_processor.run_etl(tables_to_process)
-
-    print(f"ETL Process completed with status: {overall_status}")
-    for table, status, file_path, file_name, file_type, rows_inserted in results:
-        print(f"Table: {table}, Status: {status}, File: {file_name}, Type: {file_type}, Rows Inserted: {rows_inserted}")
-
-# This is the entry point for the serverless job
-if __name__ == "__main__":
-    spark = SparkSession.builder.appName("ETLProcessor").getOrCreate()
-    run_etl_job(spark)
+Note: This script is designed to be run as a standalone Spark job. Ensure that the source and target
+schemas, as well as the metadata table, exist and are accessible in your Spark environment.
+"""
