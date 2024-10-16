@@ -1,7 +1,7 @@
 import datetime
 import os
-from pyspark.sql.functions import col, split, element_at
-from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
+from pyspark.sql.functions import col, udf
+from pyspark.sql.types import StringType, LongType
 
 class ETLProcessor:
     def __init__(self, spark, source_schema, target_schema, metadata_table_name):
@@ -9,6 +9,13 @@ class ETLProcessor:
         self.source_schema = source_schema
         self.target_schema = target_schema
         self.metadata_table_name = metadata_table_name
+
+    def extract_metadata(self, metadata_string):
+        parts = metadata_string.split(", ")
+        file_path = parts[0] if parts else "unknown"
+        file_name = file_path.split("/")[-1] if "/" in file_path else "unknown"
+        file_size = int(parts[-2]) if len(parts) > 2 and parts[-2].isdigit() else 0
+        return (file_path, file_name, file_size)
 
     def truncate_and_insert_table_data(self, tables):
         results = []
@@ -26,19 +33,16 @@ class ETLProcessor:
                 print(f"Sample data for table {table_name}:")
                 source_df.select("source_metadata").show(1, truncate=False)
 
-                # Extract metadata from the first row
-                first_row_metadata = source_df.select("source_metadata").first()
+                # Extract metadata using a UDF
+                extract_metadata_udf = udf(self.extract_metadata, StringType())
+                metadata_df = source_df.select(extract_metadata_udf(col("source_metadata")).alias("metadata"))
+                first_row_metadata = metadata_df.first()
 
-                if first_row_metadata and first_row_metadata.source_metadata:
-                    metadata_parts = first_row_metadata.source_metadata.split(", ")
-                    file_path = metadata_parts[0]
-                    file_name = file_path.split("/")[-1]
-                    file_size = int(metadata_parts[-2]) if len(metadata_parts) > 2 else 0
+                if first_row_metadata and first_row_metadata.metadata:
+                    file_path, file_name, file_size = eval(first_row_metadata.metadata)
                 else:
                     print(f"Warning: No valid metadata found for table {table_name}")
-                    file_path = "unknown"
-                    file_name = "unknown"
-                    file_size = 0
+                    file_path, file_name, file_size = "unknown", "unknown", 0
 
                 # Insert all records into the target table with schema merging
                 (source_df.write
