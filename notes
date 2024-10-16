@@ -1,6 +1,6 @@
 import datetime
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import unix_timestamp, current_timestamp, lit
+from pyspark.sql.functions import unix_timestamp, current_timestamp, lit, coalesce
 from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
 
 class ETLProcessor:
@@ -82,18 +82,30 @@ class ETLProcessor:
 
         # Create a DataFrame with the metadata
         metadata_df = self.spark.createDataFrame([(
-            None,  # id will be filled with UNIX_TIMESTAMP()
-            file_path,
-            project_name,
-            file_name,
-            None,  # process_date will be filled with current_timestamp()
-            file_process_state,
-            file_type
+            0,  # Placeholder for id, will be replaced
+            file_path or "unknown",
+            project_name or "unknown",
+            file_name or "unknown",
+            None,  # Placeholder for process_date, will be replaced
+            file_process_state or "unknown",
+            file_type or ""
         )], schema=metadata_schema)
 
         # Add UNIX_TIMESTAMP() for id and current_timestamp() for process_date
         metadata_df = metadata_df.withColumn("id", unix_timestamp().cast(LongType()))
         metadata_df = metadata_df.withColumn("process_date", current_timestamp())
+
+        # Ensure no null values in non-nullable columns
+        for field in metadata_schema.fields:
+            if not field.nullable:
+                metadata_df = metadata_df.withColumn(
+                    field.name,
+                    coalesce(metadata_df[field.name], lit("unknown") if field.dataType == StringType() else lit(0))
+                )
+
+        # Show the DataFrame before writing (for debugging)
+        print("Metadata to be inserted:")
+        metadata_df.show(truncate=False)
 
         # Write the metadata to the table
         try:
