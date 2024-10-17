@@ -1,88 +1,35 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.types import NumericType
-from pyspark.sql.functions import col, count, when, isnan, isnull
-from pyspark.ml.feature import VectorAssembler
-from pyspark.ml.clustering import KMeans
-
-def compare_schemas(table1, table2, sample_size=100000, max_numeric_cols=10):
-    spark = SparkSession.builder.appName("SchemaComparison").getOrCreate()
-    
-    # Get schemas
-    schema1 = spark.table(table1).schema
-    schema2 = spark.table(table2).schema
-    
-    # Compare column names
-    cols1 = set(field.name for field in schema1.fields)
-    cols2 = set(field.name for field in schema2.fields)
-    
-    common_cols = cols1.intersection(cols2)
-    only_in_1 = cols1 - cols2
-    only_in_2 = cols2 - cols1
-    
-    # Compare data types and nullability for common columns
-    type_diff = []
-    nullability_diff = []
-    for col in common_cols:
-        field1 = next(f for f in schema1.fields if f.name == col)
-        field2 = next(f for f in schema2.fields if f.name == col)
-        if field1.dataType != field2.dataType:
-            type_diff.append((col, str(field1.dataType), str(field2.dataType)))
-        if field1.nullable != field2.nullable:
-            nullability_diff.append((col, field1.nullable, field2.nullable))
-    
-    # Compare row counts (this might take a while for very large tables)
-    count1 = spark.table(table1).count()
-    count2 = spark.table(table2).count()
-    
-    # Generate initial report
-    report = {
-        "table1": table1,
-        "table2": table2,
-        "common_columns": list(common_cols),
-        "only_in_table1": list(only_in_1),
-        "only_in_table2": list(only_in_2),
-        "type_differences": type_diff,
-        "nullability_differences": nullability_diff,
-        "row_count_table1": count1,
-        "row_count_table2": count2
-    }
-
-    # Sample data for further analysis
-    df1 = spark.table(table1).sample(False, sample_size / count1, seed=42)
-    df2 = spark.table(table2).sample(False, sample_size / count2, seed=42)
-
-    # Perform data quality check on sampled data
-    report["data_quality"] = {
-        "table1": check_data_quality(df1, max_numeric_cols),
-        "table2": check_data_quality(df2, max_numeric_cols)
-    }
-
-    # Skip distribution comparison and column importance for very large datasets
-    print("Skipping distribution comparison and column importance analysis for performance reasons.")
-
-    return report
-
-def check_data_quality(df, max_cols):
-    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)][:max_cols]
-    quality_metrics = {}
-    
-    for col_name in numeric_cols:
-        col_metrics = df.select(
-            (count(when(isnan(col_name) | isnull(col_name), col_name)) / count("*")).alias("null_percentage"),
-            (count(distinct(col_name)) / count("*")).alias("unique_percentage")
-        ).collect()[0]
-        
-        quality_metrics[col_name] = {
-            "null_percentage": col_metrics["null_percentage"] * 100,
-            "unique_percentage": col_metrics["unique_percentage"] * 100,
-            "data_type": str(df.schema[col_name].dataType)
-        }
-    
-    return quality_metrics
-
-# Example usage
-table1_name = "database1.table1"
-table2_name = "database2.table2"
-comparison_result = compare_schemas(table1_name, table2_name)
-
-print("Schema comparison completed. Check the 'comparison_result' variable for the full report.")
+-- Databricks SQL Query for Gross Chargeoff Analysis
+WITH citus_data AS (
+  SELECT 'citus' AS calc_source, 
+         reference_number, 
+         period, 
+         COALESCE(gross_chrg_off_in_curr_mth_amt, 0) + COALESCE(gross_chargeoff_amt_rno, 0) AS gross_chargeoff_amt
+  FROM citus_prod.y14_creditcard.ccdb_calculated
+  WHERE reference_number = '10000000000638934'
+    AND bank_id = '1070345'
+    AND period IN ('201206', '201207', '201208', '201209', '201210', '201211', '201212')
+),
+calc_data AS (
+  SELECT 'calc' AS calc_source, 
+         reference_number, 
+         period, 
+         gross_chargeoff_amt
+  FROM y14_creditcard_raw.ccdb_calculated_test
+  WHERE reference_number = '10000000000638934'
+    AND bank_id = '1070345'
+    AND period IN ('201206', '201207', '201208', '201209', '201210', '201211', '201212')
+)
+SELECT 
+  calc_source,
+  reference_number,
+  period,
+  CASE 
+    WHEN calc_source = 'citus' THEN ROUND(gross_chargeoff_amt, 2)
+    ELSE gross_chargeoff_amt
+  END AS gross_chargeoff_amt
+FROM (
+  SELECT * FROM citus_data
+  UNION ALL
+  SELECT * FROM calc_data
+)
+ORDER BY period, calc_source
