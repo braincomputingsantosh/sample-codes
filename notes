@@ -1,45 +1,104 @@
-# File: date_helper.py
+from pyspark.sql import SparkSession
+from pyspark.sql.types import *
+from pyspark.sql.functions import col, when
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.clustering import KMeans
+from pyspark.ml.classification import RandomForestClassifier
+from pyspark.ml.evaluation import MulticlassClassificationEvaluator
+import json
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+import io
+import base64
 
-from pyspark.sql.functions import to_date, date_format, current_date, datediff, months_between, year, month, dayofmonth, col
-from pyspark.sql.types import DateType, TimestampType
+def compare_schemas(table1, table2):
+    spark = SparkSession.builder.appName("SchemaComparison").getOrCreate()
+    
+    # ... [Previous code for schema comparison and ML insights remains the same] ...
 
-class DateHelper:
-    @staticmethod
-    def string_to_date(df, column, format='yyyy-MM-dd'):
-        return df.withColumn(column, to_date(df[column], format))
+    # Generate visualizations
+    visualizations = generate_visualizations(report, df1, df2)
     
-    @staticmethod
-    def date_to_string(df, column, format='yyyy-MM-dd'):
-        return df.withColumn(column, date_format(df[column], format))
-    
-    @staticmethod
-    def add_current_date(df, new_column_name='current_date'):
-        return df.withColumn(new_column_name, current_date())
-    
-    @staticmethod
-    def calculate_days_difference(df, start_date_col, end_date_col, new_column_name='days_difference'):
-        return df.withColumn(new_column_name, datediff(df[end_date_col], df[start_date_col]))
-    
-    @staticmethod
-    def calculate_months_difference(df, start_date_col, end_date_col, new_column_name='months_difference'):
-        return df.withColumn(new_column_name, months_between(df[end_date_col], df[start_date_col]))
-    
-    @staticmethod
-    def extract_year(df, date_column, new_column_name='year'):
-        return df.withColumn(new_column_name, year(df[date_column]))
-    
-    @staticmethod
-    def extract_month(df, date_column, new_column_name='month'):
-        return df.withColumn(new_column_name, month(df[date_column]))
-    
-    @staticmethod
-    def extract_day(df, date_column, new_column_name='day'):
-        return df.withColumn(new_column_name, dayofmonth(df[date_column]))
+    # Add visualizations to the report
+    report["visualizations"] = visualizations
 
-    @staticmethod
-    def cast_to_date(df, column):
-        return df.withColumn(column, col(column).cast(DateType()))
+    # Save updated report as JSON
+    with open("enhanced_schema_comparison_report.json", "w") as f:
+        json.dump(report, f, indent=2)
+    
+    print("Enhanced schema comparison report with visualizations generated and saved as 'enhanced_schema_comparison_report.json'")
+    
+    return report
 
-    @staticmethod
-    def cast_to_timestamp(df, column):
-        return df.withColumn(column, col(column).cast(TimestampType()))
+def generate_visualizations(report, df1, df2):
+    visualizations = {}
+
+    # 1. Venn diagram of column overlap
+    plt.figure(figsize=(10, 6))
+    venn2([set(report["only_in_table1"] + report["common_columns"]), 
+           set(report["only_in_table2"] + report["common_columns"])], 
+          set_labels=(report["table1"], report["table2"]))
+    plt.title("Column Overlap Between Tables")
+    visualizations["column_overlap"] = fig_to_base64(plt)
+
+    # 2. Bar chart of data types
+    data_types1 = df1.dtypes
+    data_types2 = df2.dtypes
+    dt_df1 = pd.DataFrame(data_types1, columns=["column", "type"])
+    dt_df2 = pd.DataFrame(data_types2, columns=["column", "type"])
+    
+    plt.figure(figsize=(12, 6))
+    sns.countplot(data=dt_df1, x="type", label=report["table1"])
+    sns.countplot(data=dt_df2, x="type", label=report["table2"])
+    plt.title("Data Type Distribution")
+    plt.legend()
+    visualizations["data_type_distribution"] = fig_to_base64(plt)
+
+    # 3. Heatmap of data quality
+    quality_df1 = pd.DataFrame(report["data_quality"]["table1"]).T
+    quality_df2 = pd.DataFrame(report["data_quality"]["table2"]).T
+    
+    plt.figure(figsize=(15, 10))
+    sns.heatmap(quality_df1[["null_percentage", "unique_percentage"]], annot=True, cmap="YlGnBu")
+    plt.title(f"Data Quality Heatmap - {report['table1']}")
+    visualizations["data_quality_heatmap_1"] = fig_to_base64(plt)
+    
+    plt.figure(figsize=(15, 10))
+    sns.heatmap(quality_df2[["null_percentage", "unique_percentage"]], annot=True, cmap="YlGnBu")
+    plt.title(f"Data Quality Heatmap - {report['table2']}")
+    visualizations["data_quality_heatmap_2"] = fig_to_base64(plt)
+
+    # 4. Bar plot of column importance
+    importance_df1 = pd.DataFrame(report["column_importance"]["table1"], columns=["column", "importance"])
+    importance_df2 = pd.DataFrame(report["column_importance"]["table2"], columns=["column", "importance"])
+    
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=importance_df1.sort_values("importance", ascending=False).head(10), x="column", y="importance")
+    plt.title(f"Top 10 Important Columns - {report['table1']}")
+    plt.xticks(rotation=45, ha='right')
+    visualizations["column_importance_1"] = fig_to_base64(plt)
+    
+    plt.figure(figsize=(12, 6))
+    sns.barplot(data=importance_df2.sort_values("importance", ascending=False).head(10), x="column", y="importance")
+    plt.title(f"Top 10 Important Columns - {report['table2']}")
+    plt.xticks(rotation=45, ha='right')
+    visualizations["column_importance_2"] = fig_to_base64(plt)
+
+    return visualizations
+
+def fig_to_base64(fig):
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png')
+    buf.seek(0)
+    img_str = base64.b64encode(buf.getvalue()).decode()
+    buf.close()
+    plt.close(fig)
+    return img_str
+
+# Example usage remains the same
+table1_name = "database1.table1"
+table2_name = "database2.table2"
+comparison_result = compare_schemas(table1_name, table2_name)
+
+print("Visualizations have been added to the report. Check 'enhanced_schema_comparison_report.json' for details.")
