@@ -1,30 +1,85 @@
-## Description
-This change implements BK MPO operations to load data from raw to silver layers. This enhancement improves our data processing pipeline by facilitating the movement of raw data into a more refined silver layer for further analysis and use. There are 4 Notebooks included for review.
 
-Fixes # (issue)
-This is a new code for review, no specific issue number to reference.
+```
+Requirements Document: HELOC Data Processing and Metadata Management System
 
-## End-User Impact
-This change will improve data availability and quality for downstream users. Analysts and data scientists will have access to more refined data in the silver layer, potentially speeding up their workflows and improving data reliability.
+1. System Overview
+   The system is designed to process Home Equity Line of Credit (HELOC) data, 
+   moving it from raw to silver tables and managing associated metadata. It 
+   operates on specific time periods and updates source metadata after processing.
 
-## Performance Impact
-None
+2. Functional Requirements
 
-## Type of change
-- [x] New feature (non-breaking change which adds functionality)
+   2.1 Data Selection
+       - The system shall query for specific time periods (as_of_month) to 
+         identify datasets for processing.
+       - It shall generate a list of datasets that need to be imported from 
+         raw to silver tables based on the as_of_month query.
 
-## How Has This Been Tested?
-- [ ] Unit testing
-- [x] Manual testing
+   2.2 Data Processing
+       - The system shall read data from the identified raw tables.
+       - It shall check for existing data in the silver table for the given 
+         as_of_month.
+       - If data doesn't exist in the silver table, the system shall append 
+         new data.
+       - If data exists, the system shall update the existing records.
 
-Please describe the tests you ran to verify your changes. Provide instructions so we can reproduce. Please also list any relevant details for your test configuration.
+   2.3 Metadata Management
+       - After successful data processing, the system shall update the 
+         source_metadata table with details of the update.
+       - Metadata updates shall include:
+         * File name
+         * File path
+         * Process date
+         * File type
+         * File insert date
+         * Process state (e.g., "PROCESSED", "FAILED")
+         * Rows inserted count
+         * Error messages (if any)
+         * Reprocess flag
 
-## Checklist:
-- [x] My code follows the style guidelines of this project
-- [ ] I have performed a self-review of my own code
-- [ ] I have commented my code, particularly in hard-to-understand areas
-- [ ] I have made corresponding changes to the documentation
-- [ ] My changes generate no new warnings
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-- [ ] I have checked my code and corrected any misspellings
+   2.4 Error Handling
+       - The system shall catch and log any errors occurring during the 
+         data processing.
+       - In case of errors, it shall update the metadata with error 
+         information, including a truncated error message.
+
+3. Technical Requirements
+
+   3.1 Platform
+       - The system shall use PySpark for data processing and manipulation.
+
+   3.2 Data Structures
+       - Raw tables: Store the initial, unprocessed HELOC data.
+       - Silver tables: Store the processed and cleaned HELOC data.
+       - Metadata table: Store metadata about the processing of each file.
+
+   3.3 Functions
+       - update_source_metadata(): Update metadata for processed files.
+       - extract_file_info(): Extract relevant information from file paths.
+       - append_and_update_metadata(): Main function for data processing and 
+         metadata updates.
+       - process_table(): Orchestrate the processing of tables for specific 
+         time periods.
+
+4. Performance Requirements
+   - The system shall be capable of handling large-scale data processing in 
+     a distributed computing environment.
+
+5. Security Requirements
+   - Implement appropriate access controls for raw, silver, and metadata tables.
+   - Ensure secure handling of potentially sensitive HELOC data.
+
+6. Maintainability and Scalability
+   - The code shall be well-documented with function-level comments.
+   - The system should be designed to accommodate potential increases in 
+     data volume and processing frequency.
+
+7. Reporting
+   - The system shall log the results of each processing run, including 
+     the number of rows inserted and any errors encountered.
+
+8. Compliance
+   - Ensure all data handling complies with relevant financial regulations 
+     and data protection laws.
+```
+
