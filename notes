@@ -11,11 +11,123 @@ import seaborn as sns
 import pandas as pd
 import io
 import base64
+from matplotlib_venn import venn2
 
 def compare_schemas(table1, table2):
     spark = SparkSession.builder.appName("SchemaComparison").getOrCreate()
     
-    # ... [Previous code for schema comparison and ML insights remains the same] ...
+    # Get schemas
+    schema1 = spark.table(table1).schema
+    schema2 = spark.table(table2).schema
+    
+    # Compare column names
+    cols1 = set(field.name for field in schema1.fields)
+    cols2 = set(field.name for field in schema2.fields)
+    
+    common_cols = cols1.intersection(cols2)
+    only_in_1 = cols1 - cols2
+    only_in_2 = cols2 - cols1
+    
+    # Compare data types and nullability for common columns
+    type_diff = []
+    nullability_diff = []
+    for col in common_cols:
+        field1 = next(f for f in schema1.fields if f.name == col)
+        field2 = next(f for f in schema2.fields if f.name == col)
+        if field1.dataType != field2.dataType:
+            type_diff.append((col, str(field1.dataType), str(field2.dataType)))
+        if field1.nullable != field2.nullable:
+            nullability_diff.append((col, field1.nullable, field2.nullable))
+    
+    # Compare row counts
+    count1 = spark.table(table1).count()
+    count2 = spark.table(table2).count()
+    
+    # Generate initial report
+    report = {
+        "table1": table1,
+        "table2": table2,
+        "common_columns": list(common_cols),
+        "only_in_table1": list(only_in_1),
+        "only_in_table2": list(only_in_2),
+        "type_differences": type_diff,
+        "nullability_differences": nullability_diff,
+        "row_count_table1": count1,
+        "row_count_table2": count2
+    }
+
+    # Load DataFrames for ML-based comparisons
+    df1 = spark.table(table1)
+    df2 = spark.table(table2)
+
+    # 1. Data Distribution Comparison using KMeans
+    def compare_distributions(df, table_name):
+        numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+        if not numeric_cols:
+            return f"No numeric columns in {table_name}"
+        
+        assembler = VectorAssembler(inputCols=numeric_cols, outputCol="features")
+        df_vec = assembler.transform(df)
+        
+        kmeans = KMeans(k=5, seed=1)  # You can adjust the number of clusters
+        model = kmeans.fit(df_vec)
+        
+        return model.clusterCenters()
+
+    dist1 = compare_distributions(df1, table1)
+    dist2 = compare_distributions(df2, table2)
+
+    # 2. Column Importance using Random Forest
+    def get_column_importance(df, target_col):
+        feature_cols = [f.name for f in df.schema.fields if f.name != target_col]
+        assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+        df_vec = assembler.transform(df)
+        
+        rf = RandomForestClassifier(labelCol=target_col, featuresCol="features", numTrees=10)
+        model = rf.fit(df_vec)
+        
+        return list(zip(feature_cols, model.featureImportances))
+
+    # Choose a target column for importance analysis (e.g., the first column)
+    target_col = df1.columns[0]
+    importance1 = get_column_importance(df1, target_col)
+    importance2 = get_column_importance(df2, target_col)
+
+    # 3. Data Quality Check
+    def check_data_quality(df):
+        total_rows = df.count()
+        quality_metrics = {}
+        
+        for col_name, col_type in df.dtypes:
+            null_count = df.filter(col(col_name).isNull()).count()
+            unique_count = df.select(col_name).distinct().count()
+            
+            quality_metrics[col_name] = {
+                "null_percentage": (null_count / total_rows) * 100,
+                "unique_percentage": (unique_count / total_rows) * 100,
+                "data_type": col_type
+            }
+        
+        return quality_metrics
+
+    quality1 = check_data_quality(df1)
+    quality2 = check_data_quality(df2)
+
+    # Update report with ML insights
+    report.update({
+        "distribution_comparison": {
+            "table1_centers": dist1.tolist() if isinstance(dist1, list) else str(dist1),
+            "table2_centers": dist2.tolist() if isinstance(dist2, list) else str(dist2)
+        },
+        "column_importance": {
+            "table1": importance1,
+            "table2": importance2
+        },
+        "data_quality": {
+            "table1": quality1,
+            "table2": quality2
+        }
+    })
 
     # Generate visualizations
     visualizations = generate_visualizations(report, df1, df2)
@@ -96,9 +208,19 @@ def fig_to_base64(fig):
     plt.close(fig)
     return img_str
 
-# Example usage remains the same
+# Example usage
 table1_name = "database1.table1"
 table2_name = "database2.table2"
 comparison_result = compare_schemas(table1_name, table2_name)
 
-print("Visualizations have been added to the report. Check 'enhanced_schema_comparison_report.json' for details.")
+print("Schema comparison completed. Visualizations have been added to the report.")
+print("Check 'enhanced_schema_comparison_report.json' for the full report including visualizations.")
+
+# To display visualizations in a Databricks notebook, you can use:
+# from IPython.display import Image, display
+# 
+# # Display the column overlap visualization
+# column_overlap_img = base64.b64decode(comparison_result["visualizations"]["column_overlap"])
+# display(Image(column_overlap_img))
+#
+# # Repeat for other visualizations as needed
