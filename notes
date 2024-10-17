@@ -1,4 +1,4 @@
--- Databricks SQL Query for Gross Chargeoff Analysis
+-- Databricks SQL Query for Gross Chargeoff Analysis (Full Precision)
 WITH citus_data AS (
   SELECT 'citus' AS calc_source, 
          reference_number, 
@@ -23,10 +23,7 @@ SELECT
   calc_source,
   reference_number,
   period,
-  CASE 
-    WHEN calc_source = 'citus' THEN ROUND(gross_chargeoff_amt, 2)
-    ELSE gross_chargeoff_amt
-  END AS gross_chargeoff_amt
+  gross_chargeoff_amt
 FROM (
   SELECT * FROM citus_data
   UNION ALL
