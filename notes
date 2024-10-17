@@ -1,32 +1,102 @@
--- Databricks SQL Query for Gross Chargeoff Analysis (Full Precision)
-WITH citus_data AS (
-  SELECT 'citus' AS calc_source, 
-         reference_number, 
-         period, 
-         COALESCE(gross_chrg_off_in_curr_mth_amt, 0) + COALESCE(gross_chargeoff_amt_rno, 0) AS gross_chargeoff_amt
-  FROM citus_prod.y14_creditcard.ccdb_calculated
-  WHERE reference_number = '10000000000638934'
-    AND bank_id = '1070345'
-    AND period IN ('201206', '201207', '201208', '201209', '201210', '201211', '201212')
-),
-calc_data AS (
-  SELECT 'calc' AS calc_source, 
-         reference_number, 
-         period, 
-         gross_chargeoff_amt
-  FROM y14_creditcard_raw.ccdb_calculated_test
-  WHERE reference_number = '10000000000638934'
-    AND bank_id = '1070345'
-    AND period IN ('201206', '201207', '201208', '201209', '201210', '201211', '201212')
-)
-SELECT 
-  calc_source,
-  reference_number,
-  period,
-  gross_chargeoff_amt
-FROM (
-  SELECT * FROM citus_data
-  UNION ALL
-  SELECT * FROM calc_data
-)
-ORDER BY period, calc_source
+from pyspark.sql import SparkSession
+from pyspark.sql.types import NumericType
+from pyspark.sql.functions import col, count, when, isnan, isnull, approx_count_distinct
+import json
+
+def compare_schemas(table1, table2, sample_size=100000, max_numeric_cols=10):
+    spark = SparkSession.builder.appName("SchemaComparison").getOrCreate()
+    
+    def get_table_info(table_name):
+        try:
+            df = spark.table(table_name)
+            schema = df.schema
+            count = df.count()
+            return df, schema, count
+        except Exception as e:
+            print(f"Error accessing table {table_name}: {str(e)}")
+            return None, None, 0
+
+    df1, schema1, count1 = get_table_info(table1)
+    df2, schema2, count2 = get_table_info(table2)
+
+    if df1 is None or df2 is None:
+        return {"error": "Unable to access one or both tables"}
+
+    cols1 = set(field.name for field in schema1.fields)
+    cols2 = set(field.name for field in schema2.fields)
+    
+    common_cols = cols1.intersection(cols2)
+    only_in_1 = cols1 - cols2
+    only_in_2 = cols2 - cols1
+    
+    type_diff = []
+    nullability_diff = []
+    for col in common_cols:
+        field1 = next(f for f in schema1.fields if f.name == col)
+        field2 = next(f for f in schema2.fields if f.name == col)
+        if field1.dataType != field2.dataType:
+            type_diff.append((col, str(field1.dataType), str(field2.dataType)))
+        if field1.nullable != field2.nullable:
+            nullability_diff.append((col, field1.nullable, field2.nullable))
+    
+    report = {
+        "table1": table1,
+        "table2": table2,
+        "common_columns": list(common_cols),
+        "only_in_table1": list(only_in_1),
+        "only_in_table2": list(only_in_2),
+        "type_differences": type_diff,
+        "nullability_differences": nullability_diff,
+        "row_count_table1": count1,
+        "row_count_table2": count2
+    }
+
+    def safe_sample(df, fraction):
+        try:
+            return df.sample(False, fraction, seed=42)
+        except Exception as e:
+            print(f"Error sampling data: {str(e)}")
+            return df.limit(sample_size)
+
+    sample1 = safe_sample(df1, sample_size / count1) if count1 > 0 else df1
+    sample2 = safe_sample(df2, sample_size / count2) if count2 > 0 else df2
+
+    def check_data_quality(df, max_cols):
+        numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)][:max_cols]
+        quality_metrics = {}
+        
+        for col_name in numeric_cols:
+            try:
+                col_metrics = df.select(
+                    (count(when(isnan(col(col_name)) | isnull(col(col_name)), col(col_name))) / count("*")).alias("null_percentage"),
+                    (approx_count_distinct(col(col_name)) / count("*")).alias("unique_percentage")
+                ).collect()[0]
+                
+                quality_metrics[col_name] = {
+                    "null_percentage": float(col_metrics["null_percentage"] * 100),
+                    "unique_percentage": float(col_metrics["unique_percentage"] * 100),
+                    "data_type": str(df.schema[col_name].dataType)
+                }
+            except Exception as e:
+                print(f"Error processing column {col_name}: {str(e)}")
+                quality_metrics[col_name] = {"error": str(e)}
+        
+        return quality_metrics
+
+    report["data_quality"] = {
+        "table1": check_data_quality(sample1, max_numeric_cols),
+        "table2": check_data_quality(sample2, max_numeric_cols)
+    }
+
+    return report
+
+# Example usage
+table1_name = "database1.table1"
+table2_name = "database2.table2"
+comparison_result = compare_schemas(table1_name, table2_name)
+
+# Save report as JSON
+with open("schema_comparison_report.json", "w") as f:
+    json.dump(comparison_result, f, indent=2)
+
+print("Schema comparison completed. Report saved as 'schema_comparison_report.json'.")
