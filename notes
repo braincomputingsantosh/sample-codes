@@ -1,10 +1,92 @@
-Hi team,
+# ETL Process Requirements Document
 
-I've been reviewing our HELOC data processing workflow, and I thought it might be helpful to compile a formal requirements document. This document outlines our current process and could serve as a useful reference point for our team and any future collaborators.
+## 1. System Overview
 
-I've attached the document for your review. Please feel free to provide any feedback or suggestions for improvements.
+The system implements an ETL (Extract, Transform, Load) process using PySpark to update and maintain data tables. It's designed to work in both standard and serverless environments, processing multiple tables and handling metadata.
 
-Looking forward to your thoughts!
+## 2. Functional Requirements
 
-Best regards,
-[Your Name]
+### 2.1 Data Extraction
+- The system must be able to read data from source tables specified by the user.
+- Source tables are identified by a combination of schema and table name.
+
+### 2.2 Data Transformation
+- The system should support schema merging when writing data to target tables.
+- Metadata should be extracted from the first row of each source table.
+- The system must handle cases where valid metadata is not found in the source table.
+
+### 2.3 Data Loading
+- Data should be loaded into target tables, which are named with a "_silver" suffix.
+- The system must support overwriting existing data in target tables.
+- Metadata about the ETL process should be captured and stored separately.
+
+### 2.4 Error Handling
+- The system must catch and log any exceptions that occur during the insert operation.
+- In case of an error, the system should append a "FAILED" status to the results.
+
+### 2.5 Metadata Management
+- The system must maintain metadata including file path, project name, file name, process date, file type, and number of rows inserted.
+- Metadata should be stored in a separate table with a schema defined in the code.
+- The system should ensure no null values in non-nullable columns of the metadata table.
+
+### 2.6 Reporting
+- The system should provide status updates for each table processed.
+- A final report should be generated showing the overall status of the ETL process.
+
+## 3. Technical Specifications
+
+### 3.1 Framework and Libraries
+- The system must use PySpark for data processing.
+- Required PySpark modules: sql, functions, types
+
+### 3.2 Data Types
+- The system should support various data types including StructType, StringType, LongType, TimestampType, and BooleanType.
+
+### 3.3 Configuration
+- The system should allow configuration of source schema, target schema, and metadata table name.
+
+### 3.4 Scalability
+- The system should be able to process multiple tables in a single run.
+- It should be adaptable for use in a serverless environment.
+
+## 4. Process Flow
+
+1. Initialize ETLProcessor with Spark session, schemas, and metadata table name.
+2. For each table to be processed:
+   a. Read the source table
+   b. Extract metadata from the first row
+   c. Write data to the target table with schema merging
+   d. Capture and log any errors
+3. Update source metadata for each processed table
+4. Generate a report of the overall ETL process status
+
+## 5. Usage Example
+
+The document should include an example of how to use the ETLProcessor in a serverless environment, as shown in the `run_etl_job` function in the provided code.
+
+## 6. Error Handling and Logging
+
+- All exceptions should be caught and logged.
+- Error messages should include the table name where the error occurred.
+- The system should attempt to continue processing other tables even if one fails.
+
+## 7. Performance Considerations
+
+- The system should optimize data writing operations using appropriate Spark configurations.
+- Consider implementing partitioning strategies for large datasets.
+
+## 8. Security Considerations
+
+- Ensure proper access controls are in place for source and target schemas.
+- Implement encryption for sensitive metadata if required.
+
+## 9. Maintenance and Monitoring
+
+- Implement logging throughout the ETL process for easier debugging and monitoring.
+- Consider adding health check mechanisms to ensure the ETL process is functioning correctly.
+
+## 10. Future Enhancements
+
+- Implement data quality checks before and after the ETL process.
+- Add support for incremental updates to optimize processing of large datasets.
+- Develop a user interface for easier configuration and monitoring of the ETL process.
