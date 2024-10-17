@@ -1,5 +1,3 @@
-
-```
 Requirements Document: HELOC Data Processing and Metadata Management System
 
 1. System Overview
@@ -24,24 +22,46 @@ Requirements Document: HELOC Data Processing and Metadata Management System
        - If data exists, the system shall update the existing records.
 
    2.3 Metadata Management
-       - After successful data processing, the system shall update the 
-         source_metadata table with details of the update.
-       - Metadata updates shall include:
+       - After data processing, the system shall update the SOURCE_METADATA_NEW 
+         table with details of the update.
+       - Metadata updates in SOURCE_METADATA_NEW shall include:
+         * Status of the update (e.g., "PROCESSED", "FAILED")
          * File name
          * File path
          * Process date
          * File type
          * File insert date
-         * Process state (e.g., "PROCESSED", "FAILED")
          * Rows inserted count
          * Error messages (if any)
          * Reprocess flag
+       - The system shall ensure that all metadata fields are accurately 
+         updated to reflect the current state of each processed file.
+       - The reprocess flag in SOURCE_METADATA_NEW shall be set based on 
+         the outcome of the processing attempt.
 
    2.4 Error Handling
        - The system shall catch and log any errors occurring during the 
          data processing.
-       - In case of errors, it shall update the metadata with error 
-         information, including a truncated error message.
+       - In case of errors, it shall update the SOURCE_METADATA_NEW table 
+         with error information, including a truncated error message, and 
+         set the status to "FAILED".
+
+   2.5 Data Comparison and Selection
+       - The system shall compare as_of_month values between the raw and silver tables.
+       - It shall use an EXCEPT clause to identify as_of_month values present in the 
+         raw table but not in the silver table.
+       - Source of as_of_month:
+         * Raw table: bk_mpo_raw.{raw_table_name}
+         * Silver table: test_bk_mpo.{silver_table_name}
+       - The EXCEPT clause is used to efficiently identify new or updated data that 
+         needs to be processed, ensuring only necessary data is transferred from 
+         raw to silver tables.
+
+   2.6 Processing Workflow
+       - The system shall generate a list of as_of_month values to process based on 
+         the EXCEPT clause results.
+       - For each identified as_of_month, the system shall execute the 
+         append_and_update_metadata function to process the data.
 
 3. Technical Requirements
 
@@ -51,23 +71,39 @@ Requirements Document: HELOC Data Processing and Metadata Management System
    3.2 Data Structures
        - Raw tables: Store the initial, unprocessed HELOC data.
        - Silver tables: Store the processed and cleaned HELOC data.
-       - Metadata table: Store metadata about the processing of each file.
+       - SOURCE_METADATA_NEW table: Store comprehensive metadata about the 
+         processing of each file, including status, file details, and 
+         processing outcomes.
 
    3.3 Functions
-       - update_source_metadata(): Update metadata for processed files.
-       - extract_file_info(): Extract relevant information from file paths.
+       - update_source_metadata(): Update SOURCE_METADATA_NEW table with 
+         processing results, including status, file details, and reprocess flag.
+       - extract_file_info(): Extract relevant information from file paths 
+         for updating SOURCE_METADATA_NEW.
        - append_and_update_metadata(): Main function for data processing and 
-         metadata updates.
+         ensuring accurate metadata updates in SOURCE_METADATA_NEW.
        - process_table(): Orchestrate the processing of tables for specific 
-         time periods.
+         time periods and manage updates to SOURCE_METADATA_NEW.
+
+   3.4 SQL Operations
+       - The system shall use SparkSQL to perform EXCEPT operations between 
+         raw and silver tables.
+       - Example query structure:
+         ```
+         SELECT as_of_month FROM bk_mpo_raw.{raw_table_name}
+         EXCEPT
+         SELECT as_of_month FROM test_bk_mpo.{silver_table_name}
+         ```
+       - This operation identifies as_of_month values that exist in the raw table 
+         but not in the silver table, indicating new or updated data.
 
 4. Performance Requirements
    - The system shall be capable of handling large-scale data processing in 
      a distributed computing environment.
 
 5. Security Requirements
-   - Implement appropriate access controls for raw, silver, and metadata tables.
-   - Ensure secure handling of potentially sensitive HELOC data.
+   - Implement appropriate access controls for raw, silver, and SOURCE_METADATA_NEW tables.
+   - Ensure secure handling of potentially sensitive HELOC data and metadata.
 
 6. Maintainability and Scalability
    - The code shall be well-documented with function-level comments.
@@ -75,11 +111,11 @@ Requirements Document: HELOC Data Processing and Metadata Management System
      data volume and processing frequency.
 
 7. Reporting
-   - The system shall log the results of each processing run, including 
-     the number of rows inserted and any errors encountered.
+   - The system shall log the results of each processing run in the SOURCE_METADATA_NEW 
+     table, including the status, number of rows inserted, and any errors encountered.
+   - Provide functionality to query SOURCE_METADATA_NEW for monitoring and 
+     auditing purposes.
 
 8. Compliance
    - Ensure all data handling complies with relevant financial regulations 
      and data protection laws.
-```
-
