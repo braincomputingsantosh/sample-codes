@@ -1,76 +1,36 @@
-def generate_visualizations(report, df1, df2):
-    visualizations = {}
+from pyspark.sql.types import NumericType
+from pyspark.ml.feature import VectorAssembler
+from pyspark.ml.clustering import KMeans
 
-    # 1. Simple Venn diagram-like visualization of column overlap
-    plt.figure(figsize=(10, 6))
+def compare_distributions(df, table_name):
+    numeric_cols = [f.name for f in df.schema.fields if isinstance(f.dataType, NumericType)]
+    if not numeric_cols:
+        return f"No numeric columns in {table_name}"
     
-    # Create two circles
-    circle1 = plt.Circle((0.3, 0.5), 0.3, fill=False)
-    circle2 = plt.Circle((0.7, 0.5), 0.3, fill=False)
+    print(f"Numeric columns in {table_name}: {numeric_cols}")
     
-    fig, ax = plt.subplots()
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    ax.add_artist(circle1)
-    ax.add_artist(circle2)
+    # Check for null values
+    null_counts = df.select([sum(col(c).isNull().cast("int")).alias(c) for c in numeric_cols]).collect()[0]
+    null_cols = [c for c, count in zip(numeric_cols, null_counts) if count > 0]
+    if null_cols:
+        print(f"Warning: Null values found in columns: {null_cols}")
+        # Remove columns with null values
+        numeric_cols = [c for c in numeric_cols if c not in null_cols]
+        if not numeric_cols:
+            return f"All numeric columns in {table_name} contain null values"
     
-    # Add labels
-    plt.text(0.2, 0.5, f"{report['table1']}\n{len(report['only_in_table1'])}", ha='center', va='center')
-    plt.text(0.8, 0.5, f"{report['table2']}\n{len(report['only_in_table2'])}", ha='center', va='center')
-    plt.text(0.5, 0.5, f"Common\n{len(report['common_columns'])}", ha='center', va='center')
-    
-    plt.title("Column Overlap Between Tables")
-    ax.set_aspect('equal')
-    ax.axis('off')
-    visualizations["column_overlap"] = fig_to_base64(fig)
-    plt.close(fig)
-
-    # 2. Bar chart of data types
-    data_types1 = df1.dtypes
-    data_types2 = df2.dtypes
-    dt_df1 = pd.DataFrame(data_types1, columns=["column", "type"])
-    dt_df2 = pd.DataFrame(data_types2, columns=["column", "type"])
-    
-    plt.figure(figsize=(12, 6))
-    sns.countplot(data=dt_df1, x="type", label=report["table1"])
-    sns.countplot(data=dt_df2, x="type", label=report["table2"])
-    plt.title("Data Type Distribution")
-    plt.legend()
-    visualizations["data_type_distribution"] = fig_to_base64(plt.gcf())
-    plt.close()
-
-    # 3. Heatmap of data quality
-    quality_df1 = pd.DataFrame(report["data_quality"]["table1"]).T
-    quality_df2 = pd.DataFrame(report["data_quality"]["table2"]).T
-    
-    plt.figure(figsize=(15, 10))
-    sns.heatmap(quality_df1[["null_percentage", "unique_percentage"]], annot=True, cmap="YlGnBu")
-    plt.title(f"Data Quality Heatmap - {report['table1']}")
-    visualizations["data_quality_heatmap_1"] = fig_to_base64(plt.gcf())
-    plt.close()
-    
-    plt.figure(figsize=(15, 10))
-    sns.heatmap(quality_df2[["null_percentage", "unique_percentage"]], annot=True, cmap="YlGnBu")
-    plt.title(f"Data Quality Heatmap - {report['table2']}")
-    visualizations["data_quality_heatmap_2"] = fig_to_base64(plt.gcf())
-    plt.close()
-
-    # 4. Bar plot of column importance
-    importance_df1 = pd.DataFrame(report["column_importance"]["table1"], columns=["column", "importance"])
-    importance_df2 = pd.DataFrame(report["column_importance"]["table2"], columns=["column", "importance"])
-    
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=importance_df1.sort_values("importance", ascending=False).head(10), x="column", y="importance")
-    plt.title(f"Top 10 Important Columns - {report['table1']}")
-    plt.xticks(rotation=45, ha='right')
-    visualizations["column_importance_1"] = fig_to_base64(plt.gcf())
-    plt.close()
-    
-    plt.figure(figsize=(12, 6))
-    sns.barplot(data=importance_df2.sort_values("importance", ascending=False).head(10), x="column", y="importance")
-    plt.title(f"Top 10 Important Columns - {report['table2']}")
-    plt.xticks(rotation=45, ha='right')
-    visualizations["column_importance_2"] = fig_to_base64(plt.gcf())
-    plt.close()
-
-    return visualizations
+    try:
+        assembler = VectorAssembler(inputCols=numeric_cols, outputCol="features")
+        df_vec = assembler.transform(df)
+        
+        # Check if the resulting DataFrame is empty
+        if df_vec.count() == 0:
+            return f"VectorAssembler resulted in an empty DataFrame for {table_name}"
+        
+        kmeans = KMeans(k=5, seed=1)
+        model = kmeans.fit(df_vec)
+        
+        return model.clusterCenters()
+    except Exception as e:
+        print(f"Error in compare_distributions for {table_name}: {str(e)}")
+        return f"Error: {str(e)}"
