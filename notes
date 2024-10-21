@@ -1,25 +1,26 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, md5
 
-def compare_databases(spark, db1_name, db2_name, table_name):
+def compare_databases_different_tables(spark, db1_name, db2_name, table1_name, table2_name):
   """
-  Compares two databases in Databricks based on a given table name.
+  Compares two databases in Databricks with different table names.
 
   Args:
     spark: SparkSession object.
-    db1_name: Name of the first database (e.g., "census.acs").
-    db2_name: Name of the second database (e.g., "staging.census.acs_2022").
-    table_name: Name of the table to compare in both databases.
+    db1_name: Name of the first database.
+    db2_name: Name of the second database.
+    table1_name: Name of the table in the first database.
+    table2_name: Name of the table in the second database.
 
   Returns:
     A DataFrame showing the differences between the two tables, if any.
   """
 
-  # Read the tables from both databases
-  df1 = spark.table(f"{db1_name}.{table_name}")
-  df2 = spark.table(f"{db2_name}.{table_name}")
+  # Read the tables from both databases using their respective names
+  df1 = spark.table(f"{db1_name}.{table1_name}")
+  df2 = spark.table(f"{db2_name}.{table2_name}")
 
-  # Calculate hash of all columns for each row to efficiently compare
+  # Calculate hash of all columns for each row
   df1 = df1.withColumn("row_hash", md5(*df1.columns))
   df2 = df2.withColumn("row_hash", md5(*df2.columns))
 
@@ -42,10 +43,11 @@ spark = SparkSession.builder.appName("DatabaseComparison").getOrCreate()
 # Set database and table names
 db1_name = "census.acs"
 db2_name = "staging.census.acs_2022"
-table_name = "your_table_name"  # Replace with the actual table name
+table1_name = "your_table_1_name"  # Replace with the actual table name in db1
+table2_name = "your_table_2_name"  # Replace with the actual table name in db2
 
-# Compare the databases
-diff_df = compare_databases(spark, db1_name, db2_name, table_name)
+# Compare the databases with different table names
+diff_df = compare_databases_different_tables(spark, db1_name, db2_name, table1_name, table2_name)
 
 # Show the differences
 diff_df.show()
