@@ -1,3 +1,6 @@
+# Configure Spark session for schema evolution
+spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+
 # Import required libraries
 from pyspark.sql import *
 from pyspark.sql.functions import col, lit, current_timestamp, when, expr
@@ -42,7 +45,7 @@ def update_source_metadata(spark, metadata_table_name, metadata):
         WHERE file_path = '{metadata['file_path']}'
         """)
         
-        metadata_df.write.mode("append").saveAsTable(metadata_table_name)
+        metadata_df.write.mode("append").option("mergeSchema", "true").saveAsTable(metadata_table_name)
         
         log_message(f"Metadata updated for file: {metadata['file_name']}")
         
@@ -99,8 +102,8 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
                 "ingest_time", current_timestamp()
             )
             
-            # Write data
-            data_to_append.write.mode("append").saveAsTable(silver_table)
+            # Write data with schema evolution enabled
+            data_to_append.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_table)
             rows_inserted = data_to_append.count()
             process_state = "PROCESSED"
             
@@ -161,13 +164,13 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     Main processing function
     """
     try:
-        # Execute EXCEPT query to find delta records using lps_loan_id and as_of_month
+        # Execute EXCEPT query to find delta records using loan_id and as_of_month
         log_message("Executing EXCEPT query to find delta records...")
         diff_df = spark.sql(f"""
-        SELECT DISTINCT lps_loan_id, as_of_month 
+        SELECT DISTINCT loan_id, as_of_month 
         FROM bk_mpo_raw_v1.{raw_table_name}
         EXCEPT
-        SELECT DISTINCT lps_loan_id, as_of_month 
+        SELECT DISTINCT loan_id, as_of_month 
         FROM test_bk_mpo.{silver_table_name}
         """)
         
@@ -197,11 +200,11 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
 
 # Main execution
 try:
-    raw_table_name = "loan_month_loss_mit"
-    silver_table_name = "loan_month_loss_mit_silver"
+    raw_table_name = "loan_month"
+    silver_table_name = "loan_month_silver"
     metadata_table_name = "test_bk_mpo.source_metadata_new"
     
-    log_message("Starting Loss Mitigation processing job...")
+    log_message("Starting Loan Month processing job...")
     processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
     # Create a summary DataFrame of results
