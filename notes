@@ -164,13 +164,13 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     Main processing function
     """
     try:
-        # Execute EXCEPT query to find delta records using loan_id and as_of_month
+        # Execute EXCEPT query to find delta records using mcdash_loan_identifier and as_of_month
         log_message("Executing EXCEPT query to find delta records...")
         diff_df = spark.sql(f"""
-        SELECT DISTINCT loan_id, as_of_month 
+        SELECT DISTINCT mcdash_loan_identifier, as_of_month 
         FROM bk_mpo_raw_v1.{raw_table_name}
         EXCEPT
-        SELECT DISTINCT loan_id, as_of_month 
+        SELECT DISTINCT mcdash_loan_identifier, as_of_month 
         FROM test_bk_mpo.{silver_table_name}
         """)
         
@@ -200,11 +200,11 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
 
 # Main execution
 try:
-    raw_table_name = "loan_month"
-    silver_table_name = "loan_month_silver"
+    raw_table_name = "heloc"
+    silver_table_name = "heloc_silver"
     metadata_table_name = "test_bk_mpo.source_metadata_new"
     
-    log_message("Starting Loan Month processing job...")
+    log_message("Starting HELOC processing job...")
     processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
     # Create a summary DataFrame of results
