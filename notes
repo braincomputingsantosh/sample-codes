@@ -64,7 +64,7 @@ def extract_file_info(file_path):
         "file_type": "CSV"
     }
 
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, mcdash_loan_identifier, as_of_month):
+def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, lps_loan_id, as_of_month):
     """
     Main function to append data to silver table and update metadata
     """
@@ -76,24 +76,24 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         
         # Get file path efficiently
         file_path_df = spark.table(raw_table).select(
-            "mcdash_loan_identifier", 
+            "lps_loan_id", 
             "as_of_month", 
             col("source_metadata.file_path")
         ).filter(
             (col("as_of_month") == as_of_month) & 
-            (col("mcdash_loan_identifier") == mcdash_loan_identifier)
+            (col("lps_loan_id") == lps_loan_id)
         )
         
         file_path_row = file_path_df.first()
         if not file_path_row:
-            raise Exception(f"No data found for mcdash_loan_identifier {mcdash_loan_identifier} and as_of_month {as_of_month}")
+            raise Exception(f"No data found for lps_loan_id {lps_loan_id} and as_of_month {as_of_month}")
         
         file_path = file_path_row[2]
         
         # Check existing data
         existing_count = spark.table(silver_table).filter(
             (col("as_of_month") == as_of_month) & 
-            (col("mcdash_loan_identifier") == mcdash_loan_identifier)
+            (col("lps_loan_id") == lps_loan_id)
         ).count()
         
         if existing_count == 0:
@@ -101,7 +101,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             columns_to_append = [col for col in spark.table(raw_table).columns if col != 'source_metadata']
             data_to_append = spark.table(raw_table).filter(
                 (col("as_of_month") == as_of_month) & 
-                (col("mcdash_loan_identifier") == mcdash_loan_identifier)
+                (col("lps_loan_id") == lps_loan_id)
             ).select(
                 *columns_to_append
             ).withColumn(
@@ -122,7 +122,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             SET file_path = '{file_path}', 
                 ingest_time = current_timestamp()
             WHERE as_of_month = {as_of_month} 
-            AND mcdash_loan_identifier = '{mcdash_loan_identifier}'
+            AND lps_loan_id = '{lps_loan_id}'
             """)
             rows_inserted = 0
             process_state = "UPDATED"
@@ -142,7 +142,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         }
         
         update_source_metadata(spark, metadata_table_name, metadata)
-        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, mcdash_loan_identifier: {mcdash_loan_identifier}")
+        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, lps_loan_id: {lps_loan_id}")
         return "PROCESSED"
         
     except Exception as e:
@@ -175,16 +175,16 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     try:
         # Execute EXCEPT query
         diff_df = spark.sql(f"""
-        SELECT mcdash_loan_identifier, as_of_month 
+        SELECT lps_loan_id, as_of_month 
         FROM bk_mpo_raw_v1.{raw_table_name}
         EXCEPT
-        SELECT mcdash_loan_identifier, as_of_month 
+        SELECT lps_loan_id, as_of_month 
         FROM test_bk_mpo.{silver_table_name}
         """)
         
         # Process in smaller batches
         batch_size = 100  # Adjust based on your data size
-        records_to_process = [(row.mcdash_loan_identifier, row.as_of_month) for row in diff_df.collect()]
+        records_to_process = [(row.lps_loan_id, row.as_of_month) for row in diff_df.collect()]
         
         # Log the number of records to process
         log_message(f"Found {len(records_to_process)} records to process")
@@ -194,16 +194,16 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
             batch = records_to_process[i:i + batch_size]
             log_message(f"Processing batch {i//batch_size + 1} of {(len(records_to_process)-1)//batch_size + 1}")
             
-            for mcdash_loan_identifier, as_of_month in batch:
+            for lps_loan_id, as_of_month in batch:
                 try:
                     result = append_and_update_metadata(
                         spark, raw_table_name, silver_table_name,
-                        metadata_table_name, mcdash_loan_identifier, as_of_month
+                        metadata_table_name, lps_loan_id, as_of_month
                     )
-                    results.append(((mcdash_loan_identifier, as_of_month), result))
+                    results.append(((lps_loan_id, as_of_month), result))
                 except Exception as e:
-                    log_message(f"Error processing record {mcdash_loan_identifier}, {as_of_month}: {str(e)}")
-                    results.append(((mcdash_loan_identifier, as_of_month), "FAILED"))
+                    log_message(f"Error processing record {lps_loan_id}, {as_of_month}: {str(e)}")
+                    results.append(((lps_loan_id, as_of_month), "FAILED"))
         
         return results
     
@@ -213,22 +213,22 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
 
 # Example usage with error handling
 try:
-    raw_table_name = "heloc"
-    silver_table_name = "heloc_silver"
+    raw_table_name = "loan_month_loss_mit"
+    silver_table_name = "loan_month_loss_mit_silver"
     metadata_table_name = "test_bk_mpo.source_metadata_new"
     
-    log_message("Starting HELOC processing job...")
+    log_message("Starting Loss Mitigation processing job...")
     processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
     # Create a summary DataFrame of results
     summary_data = [
-        (mcdash_loan_identifier, as_of_month, result) 
-        for (mcdash_loan_identifier, as_of_month), result in processing_results
+        (lps_loan_id, as_of_month, result) 
+        for (lps_loan_id, as_of_month), result in processing_results
     ]
     
     if summary_data:
         summary_schema = StructType([
-            StructField("MCDASH Loan Identifier", StringType(), True),
+            StructField("LPS Loan ID", StringType(), True),
             StructField("As of Month", StringType(), True),
             StructField("Processing Result", StringType(), True)
         ])
