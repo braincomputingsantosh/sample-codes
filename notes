@@ -1,9 +1,16 @@
 # Import required libraries
 from pyspark.sql import *
 from pyspark.sql.functions import col, lit, current_timestamp, when, expr
-from pyspark.sql.types import StringType
+from pyspark.sql.types import StringType, StructType, StructField
 from datetime import datetime
 import traceback
+
+def log_message(message):
+    """
+    Helper function to display logs in Databricks
+    """
+    log_df = spark.createDataFrame([(message,)], ["Log Message"])
+    display(log_df)
 
 def update_source_metadata(spark, metadata_table_name, metadata):
     """
@@ -18,7 +25,7 @@ def update_source_metadata(spark, metadata_table_name, metadata):
         try:
             metadata_df = spark.createDataFrame([metadata])
         except Exception as e:
-            print(f"Error creating metadata DataFrame: {str(e)}")
+            log_message(f"Error creating metadata DataFrame: {str(e)}")
             raise
         
         # Handle reprocess column - simplified for efficiency
@@ -43,10 +50,10 @@ def update_source_metadata(spark, metadata_table_name, metadata):
         # Write metadata
         metadata_df.write.mode("append").saveAsTable(metadata_table_name)
         
-        print(f"Metadata updated for file: {metadata['file_name']}")
+        log_message(f"Metadata updated for file: {metadata['file_name']}")
         
     except Exception as e:
-        print(f"Error in update_source_metadata: {str(e)}")
+        log_message(f"Error in update_source_metadata: {str(e)}")
         raise
 
 def extract_file_info(file_path):
@@ -136,11 +143,12 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         }
         
         update_source_metadata(spark, metadata_table_name, metadata)
+        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, loan_id: {loan_id}")
         return "PROCESSED"
         
     except Exception as e:
         error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}"
-        print(error_message)
+        log_message(error_message)
         
         if file_path:
             metadata = {
@@ -157,7 +165,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             try:
                 update_source_metadata(spark, metadata_table_name, metadata)
             except Exception as meta_error:
-                print(f"Error updating metadata: {str(meta_error)}")
+                log_message(f"Error updating metadata: {str(meta_error)}")
         
         return "FAILED"
 
@@ -179,9 +187,14 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
         batch_size = 100  # Adjust based on your data size
         records_to_process = [(row.loan_id, row.as_of_month) for row in diff_df.collect()]
         
+        # Log the number of records to process
+        log_message(f"Found {len(records_to_process)} records to process")
+        
         results = []
         for i in range(0, len(records_to_process), batch_size):
             batch = records_to_process[i:i + batch_size]
+            log_message(f"Processing batch {i//batch_size + 1} of {(len(records_to_process)-1)//batch_size + 1}")
+            
             for loan_id, as_of_month in batch:
                 try:
                     result = append_and_update_metadata(
@@ -190,13 +203,13 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
                     )
                     results.append(((loan_id, as_of_month), result))
                 except Exception as e:
-                    print(f"Error processing record {loan_id}, {as_of_month}: {str(e)}")
+                    log_message(f"Error processing record {loan_id}, {as_of_month}: {str(e)}")
                     results.append(((loan_id, as_of_month), "FAILED"))
         
         return results
     
     except Exception as e:
-        print(f"Error in process_table: {str(e)}")
+        log_message(f"Error in process_table: {str(e)}")
         return []
 
 # Example usage with error handling
@@ -205,11 +218,27 @@ try:
     silver_table_name = "loan_month"
     metadata_table_name = "test_bk_mpo.source_metadata_new"
     
+    log_message("Starting processing job...")
     processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
-    # Print results
-    for (loan_id, as_of_month), result in processing_results:
-        print(f"as_of_month: {as_of_month}, loan_id: {loan_id}, Result: {result}")
+    # Create a summary DataFrame of results
+    summary_data = [
+        (loan_id, as_of_month, result) 
+        for (loan_id, as_of_month), result in processing_results
+    ]
+    
+    if summary_data:
+        summary_schema = StructType([
+            StructField("Loan ID", StringType(), True),
+            StructField("As of Month", StringType(), True),
+            StructField("Processing Result", StringType(), True)
+        ])
         
+        summary_df = spark.createDataFrame(summary_data, schema=summary_schema)
+        log_message("Processing Summary:")
+        display(summary_df)
+    else:
+        log_message("No records were processed")
+    
 except Exception as e:
-    print(f"Fatal error in main execution: {str(e)}")
+    log_message(f"Fatal error in main execution: {str(e)}")
