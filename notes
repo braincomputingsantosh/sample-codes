@@ -1,226 +1,123 @@
-# Configure Spark session for schema evolution
-spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+-- For HELOC Tables Comparison
+WITH source_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as source_count,
+    COUNT(DISTINCT mcdash_loan_identifier) as distinct_loans,
+    MIN(mcdash_loan_identifier) as sample_loan_id
+  FROM bk_mpo_raw_v1.heloc
+  GROUP BY as_of_month
+),
+target_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as target_count,
+    COUNT(DISTINCT mcdash_loan_identifier) as distinct_loans
+  FROM test_bk_mpo.heloc_silver
+  GROUP BY as_of_month
+)
+SELECT 
+  COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
+  s.source_count,
+  t.target_count,
+  s.source_count - t.target_count as count_difference,
+  s.distinct_loans as source_distinct_loans,
+  t.distinct_loans as target_distinct_loans,
+  s.sample_loan_id
+FROM source_counts s
+FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
+ORDER BY as_of_month;
 
-# Import required libraries
-from pyspark.sql import *
-from pyspark.sql.functions import col, lit, current_timestamp, when, expr
-from pyspark.sql.types import StringType, StructType, StructField
-from datetime import datetime
-import traceback
+-- For Loan Month Tables Comparison
+WITH source_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as source_count,
+    COUNT(DISTINCT loan_id) as distinct_loans,
+    MIN(loan_id) as sample_loan_id
+  FROM bk_mpo_raw_v1.loan_month
+  GROUP BY as_of_month
+),
+target_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as target_count,
+    COUNT(DISTINCT loan_id) as distinct_loans
+  FROM test_bk_mpo.loan_month_silver
+  GROUP BY as_of_month
+)
+SELECT 
+  COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
+  s.source_count,
+  t.target_count,
+  s.source_count - t.target_count as count_difference,
+  s.distinct_loans as source_distinct_loans,
+  t.distinct_loans as target_distinct_loans,
+  s.sample_loan_id
+FROM source_counts s
+FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
+ORDER BY as_of_month;
 
-def log_message(message):
-    """
-    Helper function to display logs in Databricks
-    """
-    log_df = spark.createDataFrame([(message,)], ["Log Message"])
-    display(log_df)
+-- For Loss Mitigation Tables Comparison
+WITH source_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as source_count,
+    COUNT(DISTINCT lps_loan_id) as distinct_loans,
+    MIN(lps_loan_id) as sample_loan_id
+  FROM bk_mpo_raw_v1.loan_month_loss_mit
+  GROUP BY as_of_month
+),
+target_counts AS (
+  SELECT 
+    as_of_month,
+    COUNT(*) as target_count,
+    COUNT(DISTINCT lps_loan_id) as distinct_loans
+  FROM test_bk_mpo.loan_month_loss_mit_silver
+  GROUP BY as_of_month
+)
+SELECT 
+  COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
+  s.source_count,
+  t.target_count,
+  s.source_count - t.target_count as count_difference,
+  s.distinct_loans as source_distinct_loans,
+  t.distinct_loans as target_distinct_loans,
+  s.sample_loan_id
+FROM source_counts s
+FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
+ORDER BY as_of_month;
 
-def update_source_metadata(spark, metadata_table_name, metadata):
-    """
-    Updates the metadata table with processing information
-    """
-    try:
-        if isinstance(metadata['process_date'], str):
-            metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
-        
-        try:
-            metadata_df = spark.createDataFrame([metadata])
-        except Exception as e:
-            log_message(f"Error creating metadata DataFrame: {str(e)}")
-            raise
-        
-        metadata_df = metadata_df.withColumn(
-            "reprocess",
-            when(col("reprocess").isNull(), "false")
-            .otherwise(col("reprocess").cast(StringType()))
-        )
-        
-        target_schema = spark.table(metadata_table_name).schema
-        for field in target_schema.fields:
-            if field.name in metadata_df.columns:
-                metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
-        
-        spark.sql(f"""
-        DELETE FROM {metadata_table_name}
-        WHERE file_path = '{metadata['file_path']}'
-        """)
-        
-        metadata_df.write.mode("append").option("mergeSchema", "true").saveAsTable(metadata_table_name)
-        
-        log_message(f"Metadata updated for file: {metadata['file_name']}")
-        
-    except Exception as e:
-        log_message(f"Error in update_source_metadata: {str(e)}")
-        raise
-
-def extract_file_info(file_path):
-    """
-    Extracts file information from the file path
-    """
-    return {
-        "file_name": file_path.split("/")[-1],
-        "file_type": "CSV"
-    }
-
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
-    """
-    Main function to append data to silver table and update metadata
-    """
-    file_path = None
-    try:
-        # Construct table names
-        raw_table = f"bk_mpo_raw_v1.{raw_table_name}"
-        silver_table = f"test_bk_mpo.{silver_table_name}"
-        
-        # Get file path
-        file_path_df = spark.table(raw_table).select(
-            "as_of_month", 
-            col("source_metadata.file_path")
-        ).filter(col("as_of_month") == as_of_month)
-        
-        file_path_row = file_path_df.first()
-        if not file_path_row:
-            raise Exception(f"No data found for as_of_month {as_of_month}")
-        
-        file_path = file_path_row[1]
-        
-        # Check existing data
-        existing_count = spark.table(silver_table).filter(
-            col("as_of_month") == as_of_month
-        ).count()
-        
-        if existing_count == 0:
-            # New record - Prepare data
-            columns_to_append = [col for col in spark.table(raw_table).columns if col != 'source_metadata']
-            data_to_append = spark.table(raw_table).filter(
-                col("as_of_month") == as_of_month
-            ).select(
-                *columns_to_append
-            ).withColumn(
-                "file_path", lit(file_path)
-            ).withColumn(
-                "ingest_time", current_timestamp()
-            )
-            
-            # Write data with schema evolution enabled
-            data_to_append.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_table)
-            rows_inserted = data_to_append.count()
-            process_state = "PROCESSED"
-            
-        else:
-            # Update existing record
-            spark.sql(f"""
-            UPDATE {silver_table}
-            SET file_path = '{file_path}', 
-                ingest_time = current_timestamp()
-            WHERE as_of_month = {as_of_month}
-            """)
-            rows_inserted = 0
-            process_state = "UPDATED"
-        
-        # Prepare and update metadata
-        file_info = extract_file_info(file_path)
-        metadata = {
-            "project_name": "bk_mpo",
-            "file_name": file_info["file_name"],
-            "file_path": file_path,
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": file_info["file_type"],
-            "file_process_state": process_state,
-            "rows_inserted": rows_inserted,
-            "last_error_msg": "",
-            "reprocess": "false"
-        }
-        
-        update_source_metadata(spark, metadata_table_name, metadata)
-        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}")
-        return "PROCESSED"
-        
-    except Exception as e:
-        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}"
-        log_message(error_message)
-        
-        if file_path:
-            metadata = {
-                "project_name": "bk_mpo",
-                "file_name": file_path.split("/")[-1],
-                "file_path": file_path,
-                "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "file_type": "unknown",
-                "file_process_state": "FAILED",
-                "rows_inserted": 0,
-                "last_error_msg": error_message[:255],
-                "reprocess": "true"
-            }
-            try:
-                update_source_metadata(spark, metadata_table_name, metadata)
-            except Exception as meta_error:
-                log_message(f"Error updating metadata: {str(meta_error)}")
-        
-        return "FAILED"
-
-def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
-    """
-    Main processing function
-    """
-    try:
-        # Execute EXCEPT query to find delta records using mcdash_loan_identifier and as_of_month
-        log_message("Executing EXCEPT query to find delta records...")
-        diff_df = spark.sql(f"""
-        SELECT DISTINCT mcdash_loan_identifier, as_of_month 
-        FROM bk_mpo_raw_v1.{raw_table_name}
-        EXCEPT
-        SELECT DISTINCT mcdash_loan_identifier, as_of_month 
-        FROM test_bk_mpo.{silver_table_name}
-        """)
-        
-        # Get unique as_of_month values from the delta
-        as_of_months_df = diff_df.select("as_of_month").distinct()
-        as_of_months = [row.as_of_month for row in as_of_months_df.collect()]
-        
-        log_message(f"Found {len(as_of_months)} distinct as_of_month values to process")
-        
-        results = []
-        for as_of_month in as_of_months:
-            try:
-                result = append_and_update_metadata(
-                    spark, raw_table_name, silver_table_name,
-                    metadata_table_name, as_of_month
-                )
-                results.append((as_of_month, result))
-            except Exception as e:
-                log_message(f"Error processing as_of_month {as_of_month}: {str(e)}")
-                results.append((as_of_month, "FAILED"))
-        
-        return results
-    
-    except Exception as e:
-        log_message(f"Error in process_table: {str(e)}")
-        return []
-
-# Main execution
-try:
-    raw_table_name = "heloc"
-    silver_table_name = "heloc_silver"
-    metadata_table_name = "test_bk_mpo.source_metadata_new"
-    
-    log_message("Starting HELOC processing job...")
-    processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
-    
-    # Create a summary DataFrame of results
-    summary_data = [(as_of_month, result) for (as_of_month, result) in processing_results]
-    
-    if summary_data:
-        summary_schema = StructType([
-            StructField("As of Month", StringType(), True),
-            StructField("Processing Result", StringType(), True)
-        ])
-        
-        summary_df = spark.createDataFrame(summary_data, schema=summary_schema)
-        log_message("Processing Summary:")
-        display(summary_df)
-    else:
-        log_message("No records were processed")
-    
-except Exception as e:
-    log_message(f"Fatal error in main execution: {str(e)}")
+-- Additional Detailed Comparison Query (can be used for any of the tables)
+-- Replace table_name and id_column as needed
+WITH missing_records AS (
+  SELECT 
+    s.as_of_month,
+    s.<id_column>,
+    'Missing in Target' as status
+  FROM bk_mpo_raw_v1.<table_name> s
+  LEFT JOIN test_bk_mpo.<table_name>_silver t 
+    ON s.as_of_month = t.as_of_month 
+    AND s.<id_column> = t.<id_column>
+  WHERE t.<id_column> IS NULL
+  
+  UNION ALL
+  
+  SELECT 
+    t.as_of_month,
+    t.<id_column>,
+    'Extra in Target' as status
+  FROM test_bk_mpo.<table_name>_silver t
+  LEFT JOIN bk_mpo_raw_v1.<table_name> s 
+    ON s.as_of_month = t.as_of_month 
+    AND s.<id_column> = t.<id_column>
+  WHERE s.<id_column> IS NULL
+)
+SELECT 
+  as_of_month,
+  status,
+  COUNT(*) as record_count,
+  MIN(<id_column>) as sample_id
+FROM missing_records
+GROUP BY as_of_month, status
+ORDER BY as_of_month, status;
