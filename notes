@@ -1,56 +1,206 @@
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, md5
+# Import required libraries
+from pyspark.sql import *
+from pyspark.sql.functions import col, lit, current_timestamp, when, expr
+from pyspark.sql.types import StringType
+from datetime import datetime
+import traceback
 
-def compare_databases_different_tables(spark, db1_name, db2_name, table1_name, table2_name):
-  """
-  Compares two databases in Databricks with different table names.
+def update_source_metadata(spark, metadata_table_name, metadata):
+    """
+    Updates the metadata table with processing information
+    Args:
+        spark: SparkSession object
+        metadata_table_name: Name of the metadata table
+        metadata: Dictionary containing metadata information
+    """
+    # Ensure process_date is in the correct datetime format
+    # Convert string to datetime if necessary
+    if isinstance(metadata['process_date'], str):
+        metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
+    
+    # Convert metadata dictionary to Spark DataFrame
+    metadata_df = spark.createDataFrame([metadata])
+    
+    # Handle NULL values in reprocess column and ensure it's always a string
+    # Default to "false" if NULL, otherwise cast existing value to string
+    metadata_df = metadata_df.withColumn(
+        "reprocess",
+        when(col("reprocess").isNull(), "false")
+        .otherwise(col("reprocess").cast(StringType()))
+    )
+    
+    # Get the schema of the target metadata table to ensure type consistency
+    target_schema = spark.table(metadata_table_name).schema
+    
+    # Cast all columns to match the target schema's data types
+    for field in target_schema.fields:
+        if field.name in metadata_df.columns:
+            metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
+    
+    # Remove any existing record with the same file_path to avoid duplicates
+    spark.sql(f"""
+    DELETE FROM {metadata_table_name}
+    WHERE file_path = '{metadata['file_path']}'
+    """)
+    
+    # Insert the new or updated metadata record
+    metadata_df.write.mode("append").saveAsTable(metadata_table_name)
+    
+    # Add unique identifier using UNIX timestamp
+    metadata_df = metadata_df.withColumn("id", expr("CAST(UNIX_TIMESTAMP() * 1000000 AS BIGINT)"))
+    
+    print(f"Metadata updated for file: {metadata['file_name']}")
 
-  Args:
-    spark: SparkSession object.
-    db1_name: Name of the first database.
-    db2_name: Name of the second database.
-    table1_name: Name of the table in the first database.
-    table2_name: Name of the table in the second database.
+def extract_file_info(file_path):
+    """
+    Extracts file information from the file path
+    Args:
+        file_path: Path of the file
+    Returns:
+        Dictionary containing file name and type information
+    """
+    return {
+        "file_name": file_path.split("/")[-1],  # Extract filename from path
+        "file_type": "CSV"  # Currently assuming CSV format for all files
+    }
 
-  Returns:
-    A DataFrame showing the differences between the two tables, if any.
-  """
+def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, loan_id, as_of_month):
+    """
+    Main function to append data to silver table and update metadata
+    Args:
+        spark: SparkSession object
+        raw_table_name: Name of the raw table
+        silver_table_name: Name of the silver table
+        metadata_table_name: Name of the metadata table
+        loan_id: Loan identifier
+        as_of_month: Reference month for the data
+    Returns:
+        String indicating process status ("PROCESSED" or "FAILED")
+    """
+    try:
+        # Construct fully qualified table names with database/schema
+        raw_table = f"bk_mpo_raw_v1.{raw_table_name}"
+        silver_table = f"test_bk_mpo.{silver_table_name}_silver"
+        
+        # Read data from raw table
+        raw_df = spark.table(raw_table)
+        
+        # Get file path from source metadata for specific loan_id and as_of_month
+        file_path = raw_df.filter((col("as_of_month") == as_of_month) & 
+                                (col("loan_id") == loan_id))\
+            .select(col("source_metadata.file_path")).first()[0]
+        
+        # Check if record already exists in silver table
+        silver_df = spark.table(silver_table)
+        existing_data = silver_df.filter((col("as_of_month") == as_of_month) & 
+                                       (col("loan_id") == loan_id))
+        
+        if existing_data.count() == 0:
+            # New record - Append to silver table
+            # Exclude source_metadata column and add file_path and ingest_time
+            columns_to_append = [col for col in raw_df.columns if col != 'source_metadata']
+            data_to_append = raw_df.filter((col("as_of_month") == as_of_month) & 
+                                         (col("loan_id") == loan_id))\
+                .select(columns_to_append)\
+                .withColumn("file_path", lit(file_path))\
+                .withColumn("ingest_time", current_timestamp())
+            
+            # Perform the append operation
+            data_to_append.write.mode("append").saveAsTable(silver_table)
+            
+            rows_inserted = data_to_append.count()
+            process_state = "PROCESSED"
+            
+        else:
+            # Existing record - Update file_path and ingest_time
+            spark.sql(f"""
+            UPDATE {silver_table}
+            SET file_path = '{file_path}', ingest_time = current_timestamp()
+            WHERE as_of_month = {as_of_month} AND loan_id = {loan_id}
+            """)
+            
+            rows_inserted = 0
+            process_state = "UPDATED"
+        
+        # Get file information
+        file_info = extract_file_info(file_path)
+        
+        # Prepare metadata for successful processing
+        metadata = {
+            "project_name": "bk_mpo",
+            "file_name": file_info["file_name"],
+            "file_path": file_path,
+            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "file_type": file_info["file_type"],
+            "file_process_state": process_state,
+            "rows_inserted": rows_inserted,
+            "last_error_msg": "",
+            "reprocess": "false"
+        }
+        
+        # Update the metadata table
+        update_source_metadata(spark, metadata_table_name, metadata)
+        
+        print(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, loan_id: {loan_id}")
+        return "PROCESSED"
+        
+    except Exception as e:
+        # Error handling - capture full stack trace
+        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}\n{traceback.format_exc()}"
+        
+        # Prepare metadata for failed processing
+        metadata = {
+            "project_name": "bk_mpo",
+            "file_name": file_path.split("/")[-1],
+            "file_path": file_path,
+            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "file_type": "unknown",
+            "file_process_state": "FAILED",
+            "rows_inserted": 0,
+            "last_error_msg": error_message[:255],  # Truncate error message to fit field size
+            "reprocess": "true"
+        }
+        update_source_metadata(spark, metadata_table_name, metadata)
+        
+        print(error_message)
+        return "FAILED"
 
-  # Read the tables from both databases using their respective names
-  df1 = spark.table(f"{db1_name}.{table1_name}")
-  df2 = spark.table(f"{db2_name}.{table2_name}")
+def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
+    """
+    Main orchestration function to process tables and handle metadata
+    Args:
+        spark: SparkSession object
+        raw_table_name: Name of the raw table
+        silver_table_name: Name of the silver table
+        metadata_table_name: Name of the metadata table
+    Returns:
+        List of tuples containing processing results
+    """
+    # Find records that exist in raw but not in silver using EXCEPT
+    diff_df = spark.sql(f"""
+    SELECT loan_id, as_of_month FROM bk_mpo_raw_v1.{raw_table_name}
+    EXCEPT
+    SELECT loan_id, as_of_month FROM test_bk_mpo.{silver_table_name}_silver
+    """)
+    
+    # Convert DataFrame to list of tuples for processing
+    records_to_process = [(row.loan_id, row.as_of_month) for row in diff_df.collect()]
+    
+    # Process each record and collect results
+    results = []
+    for loan_id, as_of_month in records_to_process:
+        result = append_and_update_metadata(spark, raw_table_name, silver_table_name, 
+                                          metadata_table_name, loan_id, as_of_month)
+        results.append(((loan_id, as_of_month), result))
+    
+    return results
 
-  # Calculate hash of all columns for each row
-  df1 = df1.withColumn("row_hash", md5(*df1.columns))
-  df2 = df2.withColumn("row_hash", md5(*df2.columns))
+# Example usage of the functions
+raw_table_name = "loan_month"
+silver_table_name = "loan_month"
+metadata_table_name = "test_bk_mpo.source_metadata_new"
+processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
 
-  # Find rows that are in df1 but not in df2
-  df1_only = df1.select("row_hash").subtract(df2.select("row_hash"))
-  df1_diff = df1.join(df1_only, "row_hash", "left_semi")
-
-  # Find rows that are in df2 but not in df1
-  df2_only = df2.select("row_hash").subtract(df1.select("row_hash"))
-  df2_diff = df2.join(df2_only, "row_hash", "left_semi")
-
-  # Union the differences
-  all_diffs = df1_diff.union(df2_diff)
-
-  return all_diffs
-
-# Initialize SparkSession
-spark = SparkSession.builder.appName("DatabaseComparison").getOrCreate()
-
-# Set database and table names
-db1_name = "census.acs"
-db2_name = "staging.census.acs_2022"
-table1_name = "your_table_1_name"  # Replace with the actual table name in db1
-table2_name = "your_table_2_name"  # Replace with the actual table name in db2
-
-# Compare the databases with different table names
-diff_df = compare_databases_different_tables(spark, db1_name, db2_name, table1_name, table2_name)
-
-# Show the differences
-diff_df.show()
-
-# Stop the SparkSession
-spark.stop()
+# Print processing results
+for (loan_id, as_of_month), result in processing_results:
+    print(f"as_of_month: {as_of_month}, loan_id: {loan_id}, Result: {result}")
