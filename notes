@@ -12,65 +12,6 @@ def log_message(message):
     log_df = spark.createDataFrame([(message,)], ["Log Message"])
     display(log_df)
 
-def verify_table_access(raw_table_name, silver_table_name):
-    """
-    Verify table access and permissions
-    """
-    try:
-        # Check source table
-        log_message("Verifying source table access...")
-        raw_df = spark.sql(f"""
-        SHOW TABLE EXTENDED IN bk_mpo_raw_v1 LIKE '{raw_table_name}'
-        """)
-        display(raw_df)
-        
-        # Check destination table
-        log_message("Verifying destination table access...")
-        silver_df = spark.sql(f"""
-        SHOW TABLE EXTENDED IN test_bk_mpo LIKE '{silver_table_name}'
-        """)
-        display(silver_df)
-        
-        # Verify write permission with a test
-        log_message("Verifying write permission...")
-        spark.sql(f"""
-        INSERT INTO test_bk_mpo.{silver_table_name}
-        SELECT * FROM bk_mpo_raw_v1.{raw_table_name} LIMIT 0
-        """)
-        
-        log_message("Table access verification completed successfully")
-        return True
-    except Exception as e:
-        log_message(f"Table access verification failed: {str(e)}")
-        return False
-
-def verify_schema_compatibility(spark, raw_table_name, silver_table_name):
-    """
-    Verify schema compatibility between source and destination
-    """
-    try:
-        raw_schema = spark.table(f"bk_mpo_raw_v1.{raw_table_name}").schema
-        silver_schema = spark.table(f"test_bk_mpo.{silver_table_name}").schema
-        
-        log_message("Source Schema:")
-        display(spark.createDataFrame([(str(raw_schema),)], ["Schema"]))
-        
-        log_message("Destination Schema:")
-        display(spark.createDataFrame([(str(silver_schema),)], ["Schema"]))
-        
-        # Compare schemas (excluding source_metadata column)
-        raw_fields = set(field.name for field in raw_schema.fields if field.name != 'source_metadata')
-        silver_fields = set(field.name for field in silver_schema.fields)
-        
-        missing_fields = raw_fields - silver_fields
-        if missing_fields:
-            log_message(f"Warning: Following fields are missing in destination: {missing_fields}")
-            
-        return True
-    except Exception as e:
-        log_message(f"Schema verification failed: {str(e)}")
-        return False
-
 def update_source_metadata(spark, metadata_table_name, metadata):
     """
     Updates the metadata table with processing information
@@ -81,7 +22,6 @@ def update_source_metadata(spark, metadata_table_name, metadata):
         
         try:
             metadata_df = spark.createDataFrame([metadata])
-            log_message("Created metadata DataFrame successfully")
         except Exception as e:
             log_message(f"Error creating metadata DataFrame: {str(e)}")
             raise
@@ -97,19 +37,17 @@ def update_source_metadata(spark, metadata_table_name, metadata):
             if field.name in metadata_df.columns:
                 metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
         
-        log_message(f"Deleting existing metadata for file_path: {metadata['file_path']}")
         spark.sql(f"""
         DELETE FROM {metadata_table_name}
         WHERE file_path = '{metadata['file_path']}'
         """)
         
-        log_message("Writing new metadata record")
         metadata_df.write.mode("append").saveAsTable(metadata_table_name)
         
         log_message(f"Metadata updated for file: {metadata['file_name']}")
         
     except Exception as e:
-        log_message(f"Error in update_source_metadata: {str(e)}\n{traceback.format_exc()}")
+        log_message(f"Error in update_source_metadata: {str(e)}")
         raise
 
 def extract_file_info(file_path):
@@ -121,8 +59,7 @@ def extract_file_info(file_path):
         "file_type": "CSV"
     }
 
-
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, lps_loan_id, as_of_month):
+def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, as_of_month):
     """
     Main function to append data to silver table and update metadata
     """
@@ -132,42 +69,28 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         raw_table = f"bk_mpo_raw_v1.{raw_table_name}"
         silver_table = f"test_bk_mpo.{silver_table_name}"
         
-        log_message(f"Processing lps_loan_id: {lps_loan_id}, as_of_month: {as_of_month}")
-        
-        # Get file path efficiently
+        # Get file path
         file_path_df = spark.table(raw_table).select(
-            "lps_loan_id", 
             "as_of_month", 
             col("source_metadata.file_path")
-        ).filter(
-            (col("as_of_month") == as_of_month) & 
-            (col("lps_loan_id") == lps_loan_id)
-        )
+        ).filter(col("as_of_month") == as_of_month)
         
-        log_message("Checking source data existence...")
         file_path_row = file_path_df.first()
         if not file_path_row:
-            raise Exception(f"No data found for lps_loan_id {lps_loan_id} and as_of_month {as_of_month}")
+            raise Exception(f"No data found for as_of_month {as_of_month}")
         
-        file_path = file_path_row[2]
-        log_message(f"Found file_path: {file_path}")
+        file_path = file_path_row[1]
         
         # Check existing data
-        log_message("Checking existing data in silver table...")
         existing_count = spark.table(silver_table).filter(
-            (col("as_of_month") == as_of_month) & 
-            (col("lps_loan_id") == lps_loan_id)
+            col("as_of_month") == as_of_month
         ).count()
-        
-        log_message(f"Found {existing_count} existing records")
         
         if existing_count == 0:
             # New record - Prepare data
-            log_message("Preparing new record for insertion...")
             columns_to_append = [col for col in spark.table(raw_table).columns if col != 'source_metadata']
             data_to_append = spark.table(raw_table).filter(
-                (col("as_of_month") == as_of_month) & 
-                (col("lps_loan_id") == lps_loan_id)
+                col("as_of_month") == as_of_month
             ).select(
                 *columns_to_append
             ).withColumn(
@@ -176,30 +99,21 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
                 "ingest_time", current_timestamp()
             )
             
-            # Write data with detailed logging
-            log_message(f"Attempting to write {data_to_append.count()} rows to {silver_table}")
-            try:
-                data_to_append.write.mode("append").saveAsTable(silver_table)
-                rows_inserted = data_to_append.count()
-                log_message(f"Successfully wrote {rows_inserted} rows to {silver_table}")
-                process_state = "PROCESSED"
-            except Exception as write_error:
-                log_message(f"Error during write operation: {str(write_error)}\n{traceback.format_exc()}")
-                raise
+            # Write data
+            data_to_append.write.mode("append").saveAsTable(silver_table)
+            rows_inserted = data_to_append.count()
+            process_state = "PROCESSED"
             
         else:
             # Update existing record
-            log_message("Updating existing record...")
             spark.sql(f"""
             UPDATE {silver_table}
             SET file_path = '{file_path}', 
                 ingest_time = current_timestamp()
-            WHERE as_of_month = {as_of_month} 
-            AND lps_loan_id = '{lps_loan_id}'
+            WHERE as_of_month = {as_of_month}
             """)
             rows_inserted = 0
             process_state = "UPDATED"
-            log_message("Update completed successfully")
         
         # Prepare and update metadata
         file_info = extract_file_info(file_path)
@@ -215,15 +129,13 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             "reprocess": "false"
         }
         
-        log_message("Updating metadata...")
         update_source_metadata(spark, metadata_table_name, metadata)
-        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, lps_loan_id: {lps_loan_id}")
+        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}")
         return "PROCESSED"
         
     except Exception as e:
         error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}"
         log_message(error_message)
-        log_message(traceback.format_exc())
         
         if file_path:
             metadata = {
@@ -246,62 +158,41 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
 
 def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
     """
-    Main processing function with enhanced logging
+    Main processing function
     """
     try:
-        # Show counts from both tables for verification
-        log_message("Checking initial table counts...")
-        raw_count = spark.sql(f"SELECT COUNT(*) as raw_count FROM bk_mpo_raw_v1.{raw_table_name}").collect()[0]['raw_count']
-        silver_count = spark.sql(f"SELECT COUNT(*) as silver_count FROM test_bk_mpo.{silver_table_name}").collect()[0]['silver_count']
-        
-        log_message(f"Raw table count: {raw_count}")
-        log_message(f"Silver table count: {silver_count}")
-        
-        # Execute EXCEPT query
-        log_message("Executing EXCEPT query to find new records...")
+        # Execute EXCEPT query to find delta records using lps_loan_id and as_of_month
+        log_message("Executing EXCEPT query to find delta records...")
         diff_df = spark.sql(f"""
-        SELECT lps_loan_id, as_of_month 
+        SELECT DISTINCT lps_loan_id, as_of_month 
         FROM bk_mpo_raw_v1.{raw_table_name}
         EXCEPT
-        SELECT lps_loan_id, as_of_month 
+        SELECT DISTINCT lps_loan_id, as_of_month 
         FROM test_bk_mpo.{silver_table_name}
         """)
         
-        log_message("EXCEPT query results:")
-        display(diff_df)
+        # Get unique as_of_month values from the delta
+        as_of_months_df = diff_df.select("as_of_month").distinct()
+        as_of_months = [row.as_of_month for row in as_of_months_df.collect()]
         
-        # Process in smaller batches
-        records_to_process = [(row.lps_loan_id, row.as_of_month) for row in diff_df.collect()]
-        total_records = len(records_to_process)
-        log_message(f"Found {total_records} records to process")
+        log_message(f"Found {len(as_of_months)} distinct as_of_month values to process")
         
-        if total_records == 0:
-            log_message("No new records to process")
-            return []
-        
-        batch_size = 100  # Adjust based on your data size
         results = []
-        
-        for i in range(0, total_records, batch_size):
-            batch = records_to_process[i:i + batch_size]
-            log_message(f"Processing batch {i//batch_size + 1} of {(total_records-1)//batch_size + 1}")
-            
-            for lps_loan_id, as_of_month in batch:
-                try:
-                    result = append_and_update_metadata(
-                        spark, raw_table_name, silver_table_name,
-                        metadata_table_name, lps_loan_id, as_of_month
-                    )
-                    results.append(((lps_loan_id, as_of_month), result))
-                except Exception as e:
-                    log_message(f"Error processing record {lps_loan_id}, {as_of_month}: {str(e)}")
-                    results.append(((lps_loan_id, as_of_month), "FAILED"))
+        for as_of_month in as_of_months:
+            try:
+                result = append_and_update_metadata(
+                    spark, raw_table_name, silver_table_name,
+                    metadata_table_name, as_of_month
+                )
+                results.append((as_of_month, result))
+            except Exception as e:
+                log_message(f"Error processing as_of_month {as_of_month}: {str(e)}")
+                results.append((as_of_month, "FAILED"))
         
         return results
     
     except Exception as e:
         log_message(f"Error in process_table: {str(e)}")
-        log_message(traceback.format_exc())
         return []
 
 # Main execution
@@ -311,41 +202,22 @@ try:
     metadata_table_name = "test_bk_mpo.source_metadata_new"
     
     log_message("Starting Loss Mitigation processing job...")
+    processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
-    # Verify table access first
-    if verify_table_access(raw_table_name, silver_table_name):
-        log_message("Table access verified successfully")
+    # Create a summary DataFrame of results
+    summary_data = [(as_of_month, result) for (as_of_month, result) in processing_results]
+    
+    if summary_data:
+        summary_schema = StructType([
+            StructField("As of Month", StringType(), True),
+            StructField("Processing Result", StringType(), True)
+        ])
         
-        # Verify schema compatibility
-        if verify_schema_compatibility(spark, raw_table_name, silver_table_name):
-            log_message("Schema compatibility verified successfully")
-            
-            # Process the tables
-            processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
-            
-            # Create a summary DataFrame of results
-            summary_data = [
-                (lps_loan_id, as_of_month, result) 
-                for (lps_loan_id, as_of_month), result in processing_results
-            ]
-            
-            if summary_data:
-                summary_schema = StructType([
-                    StructField("LPS Loan ID", StringType(), True),
-                    StructField("As of Month", StringType(), True),
-                    StructField("Processing Result", StringType(), True)
-                ])
-                
-                summary_df = spark.createDataFrame(summary_data, schema=summary_schema)
-                log_message("Processing Summary:")
-                display(summary_df)
-            else:
-                log_message("No records were processed")
-        else:
-            log_message("Aborting due to schema incompatibility")
+        summary_df = spark.createDataFrame(summary_data, schema=summary_schema)
+        log_message("Processing Summary:")
+        display(summary_df)
     else:
-        log_message("Aborting due to table access issues")
+        log_message("No records were processed")
     
 except Exception as e:
     log_message(f"Fatal error in main execution: {str(e)}")
-    log_message(traceback.format_exc())
