@@ -40,7 +40,7 @@ def update_source_metadata(spark, metadata_table_name, metadata):
         WHERE file_path = '{metadata['file_path']}'
         """)
         
-        # Write with timeout handling
+        # Write metadata
         metadata_df.write.mode("append").saveAsTable(metadata_table_name)
         
         print(f"Metadata updated for file: {metadata['file_name']}")
@@ -60,7 +60,7 @@ def extract_file_info(file_path):
 
 def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, loan_id, as_of_month):
     """
-    Main function to append data to silver table and update metadata with optimized resource usage
+    Main function to append data to silver table and update metadata
     """
     file_path = None
     try:
@@ -68,7 +68,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         raw_table = f"bk_mpo_raw_v1.{raw_table_name}"
         silver_table = f"test_bk_mpo.{silver_table_name}_silver"
         
-        # Optimize raw table reading with specific columns
+        # Get file path efficiently
         file_path_df = spark.table(raw_table).select(
             "loan_id", 
             "as_of_month", 
@@ -76,15 +76,15 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
         ).filter(
             (col("as_of_month") == as_of_month) & 
             (col("loan_id") == loan_id)
-        ).cache()  # Cache small filtered dataset
+        )
         
-        if file_path_df.count() == 0:
+        file_path_row = file_path_df.first()
+        if not file_path_row:
             raise Exception(f"No data found for loan_id {loan_id} and as_of_month {as_of_month}")
         
-        file_path = file_path_df.first()[2]
-        file_path_df.unpersist()  # Clear cache
+        file_path = file_path_row[2]
         
-        # Check existing data efficiently
+        # Check existing data
         existing_count = spark.table(silver_table).filter(
             (col("as_of_month") == as_of_month) & 
             (col("loan_id") == loan_id)
@@ -104,7 +104,7 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
                 "ingest_time", current_timestamp()
             )
             
-            # Write with optimization
+            # Write data
             data_to_append.write.mode("append").saveAsTable(silver_table)
             rows_inserted = data_to_append.count()
             process_state = "PROCESSED"
@@ -163,22 +163,21 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
 
 def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
     """
-    Optimized main processing function for serverless environment
+    Main processing function for serverless environment
     """
     try:
-        # Execute EXCEPT query with optimization
+        # Execute EXCEPT query
         diff_df = spark.sql(f"""
         SELECT loan_id, as_of_month 
         FROM bk_mpo_raw_v1.{raw_table_name}
         EXCEPT
         SELECT loan_id, as_of_month 
         FROM test_bk_mpo.{silver_table_name}_silver
-        """).cache()  # Cache the small diff result
+        """)
         
-        # Process in smaller batches if needed
+        # Process in smaller batches
         batch_size = 100  # Adjust based on your data size
         records_to_process = [(row.loan_id, row.as_of_month) for row in diff_df.collect()]
-        diff_df.unpersist()  # Clear cache
         
         results = []
         for i in range(0, len(records_to_process), batch_size):
@@ -208,7 +207,7 @@ try:
     
     processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
     
-    # Print results with error handling
+    # Print results
     for (loan_id, as_of_month), result in processing_results:
         print(f"as_of_month: {as_of_month}, loan_id: {loan_id}, Result: {result}")
         
