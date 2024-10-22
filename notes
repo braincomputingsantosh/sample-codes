@@ -1,123 +1,79 @@
--- For HELOC Tables Comparison
-WITH source_counts AS (
+-- 1. Create a view of records to be processed
+CREATE OR REPLACE TEMPORARY VIEW heloc_delta AS
+WITH delta_records AS (
+  SELECT DISTINCT mcdash_loan_identifier, as_of_month 
+  FROM bk_mpo_raw_v1.heloc
+  EXCEPT
+  SELECT DISTINCT mcdash_loan_identifier, as_of_month 
+  FROM test_bk_mpo.heloc_silver
+),
+file_paths AS (
   SELECT 
     as_of_month,
-    COUNT(*) as source_count,
-    COUNT(DISTINCT mcdash_loan_identifier) as distinct_loans,
-    MIN(mcdash_loan_identifier) as sample_loan_id
+    FIRST(source_metadata.file_path) as file_path
   FROM bk_mpo_raw_v1.heloc
   GROUP BY as_of_month
-),
-target_counts AS (
-  SELECT 
-    as_of_month,
-    COUNT(*) as target_count,
-    COUNT(DISTINCT mcdash_loan_identifier) as distinct_loans
-  FROM test_bk_mpo.heloc_silver
-  GROUP BY as_of_month
 )
 SELECT 
-  COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
-  s.source_count,
-  t.target_count,
-  s.source_count - t.target_count as count_difference,
-  s.distinct_loans as source_distinct_loans,
-  t.distinct_loans as target_distinct_loans,
-  s.sample_loan_id
-FROM source_counts s
-FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
-ORDER BY as_of_month;
+  h.*,
+  f.file_path
+FROM bk_mpo_raw_v1.heloc h
+INNER JOIN delta_records d 
+  ON h.mcdash_loan_identifier = d.mcdash_loan_identifier 
+  AND h.as_of_month = d.as_of_month
+INNER JOIN file_paths f 
+  ON h.as_of_month = f.as_of_month;
 
--- For Loan Month Tables Comparison
-WITH source_counts AS (
-  SELECT 
-    as_of_month,
-    COUNT(*) as source_count,
-    COUNT(DISTINCT loan_id) as distinct_loans,
-    MIN(loan_id) as sample_loan_id
-  FROM bk_mpo_raw_v1.loan_month
-  GROUP BY as_of_month
-),
-target_counts AS (
-  SELECT 
-    as_of_month,
-    COUNT(*) as target_count,
-    COUNT(DISTINCT loan_id) as distinct_loans
-  FROM test_bk_mpo.loan_month_silver
-  GROUP BY as_of_month
-)
+-- 2. Insert new records into silver table
+INSERT INTO test_bk_mpo.heloc_silver
+SELECT 
+  h.*,  -- all columns except source_metadata
+  h.file_path,
+  current_timestamp() as ingest_time
+FROM heloc_delta h;
+
+-- 3. Update metadata table
+INSERT INTO test_bk_mpo.source_metadata_new
+SELECT 
+  'bk_mpo' as project_name,
+  split(file_path, '/')[size(split(file_path, '/')) - 1] as file_name,
+  file_path,
+  current_timestamp() as process_date,
+  'CSV' as file_type,
+  'PROCESSED' as file_process_state,
+  COUNT(*) as rows_inserted,
+  '' as last_error_msg,
+  'false' as reprocess
+FROM heloc_delta
+GROUP BY file_path;
+
+-- 4. Validation query
 SELECT 
   COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
-  s.source_count,
-  t.target_count,
-  s.source_count - t.target_count as count_difference,
-  s.distinct_loans as source_distinct_loans,
-  t.distinct_loans as target_distinct_loans,
-  s.sample_loan_id
-FROM source_counts s
-FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
+  COUNT(DISTINCT s.mcdash_loan_identifier) as source_count,
+  COUNT(DISTINCT t.mcdash_loan_identifier) as target_count,
+  COUNT(DISTINCT s.mcdash_loan_identifier) - COUNT(DISTINCT t.mcdash_loan_identifier) as difference,
+  COUNT(DISTINCT s.file_path) as source_files,
+  COUNT(DISTINCT t.file_path) as target_files
+FROM bk_mpo_raw_v1.heloc s
+FULL OUTER JOIN test_bk_mpo.heloc_silver t 
+  ON s.as_of_month = t.as_of_month
+  AND s.mcdash_loan_identifier = t.mcdash_loan_identifier
+GROUP BY COALESCE(s.as_of_month, t.as_of_month)
+HAVING difference != 0
 ORDER BY as_of_month;
 
--- For Loss Mitigation Tables Comparison
-WITH source_counts AS (
-  SELECT 
-    as_of_month,
-    COUNT(*) as source_count,
-    COUNT(DISTINCT lps_loan_id) as distinct_loans,
-    MIN(lps_loan_id) as sample_loan_id
-  FROM bk_mpo_raw_v1.loan_month_loss_mit
-  GROUP BY as_of_month
-),
-target_counts AS (
-  SELECT 
-    as_of_month,
-    COUNT(*) as target_count,
-    COUNT(DISTINCT lps_loan_id) as distinct_loans
-  FROM test_bk_mpo.loan_month_loss_mit_silver
-  GROUP BY as_of_month
-)
-SELECT 
-  COALESCE(s.as_of_month, t.as_of_month) as as_of_month,
-  s.source_count,
-  t.target_count,
-  s.source_count - t.target_count as count_difference,
-  s.distinct_loans as source_distinct_loans,
-  t.distinct_loans as target_distinct_loans,
-  s.sample_loan_id
-FROM source_counts s
-FULL OUTER JOIN target_counts t ON s.as_of_month = t.as_of_month
-ORDER BY as_of_month;
-
--- Additional Detailed Comparison Query (can be used for any of the tables)
--- Replace table_name and id_column as needed
-WITH missing_records AS (
-  SELECT 
-    s.as_of_month,
-    s.<id_column>,
-    'Missing in Target' as status
-  FROM bk_mpo_raw_v1.<table_name> s
-  LEFT JOIN test_bk_mpo.<table_name>_silver t 
-    ON s.as_of_month = t.as_of_month 
-    AND s.<id_column> = t.<id_column>
-  WHERE t.<id_column> IS NULL
-  
-  UNION ALL
-  
-  SELECT 
-    t.as_of_month,
-    t.<id_column>,
-    'Extra in Target' as status
-  FROM test_bk_mpo.<table_name>_silver t
-  LEFT JOIN bk_mpo_raw_v1.<table_name> s 
-    ON s.as_of_month = t.as_of_month 
-    AND s.<id_column> = t.<id_column>
-  WHERE s.<id_column> IS NULL
-)
+-- 5. Detailed error checking (optional)
 SELECT 
   as_of_month,
-  status,
-  COUNT(*) as record_count,
-  MIN(<id_column>) as sample_id
-FROM missing_records
-GROUP BY as_of_month, status
-ORDER BY as_of_month, status;
+  mcdash_loan_identifier,
+  file_path,
+  'Missing in Target' as status
+FROM bk_mpo_raw_v1.heloc s
+WHERE NOT EXISTS (
+  SELECT 1 
+  FROM test_bk_mpo.heloc_silver t
+  WHERE s.as_of_month = t.as_of_month
+  AND s.mcdash_loan_identifier = t.mcdash_loan_identifier
+)
+ORDER BY as_of_month, mcdash_loan_identifier;
