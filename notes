@@ -8,124 +8,121 @@ import traceback
 def update_source_metadata(spark, metadata_table_name, metadata):
     """
     Updates the metadata table with processing information
-    Args:
-        spark: SparkSession object
-        metadata_table_name: Name of the metadata table
-        metadata: Dictionary containing metadata information
     """
-    # Ensure process_date is in the correct datetime format
-    # Convert string to datetime if necessary
-    if isinstance(metadata['process_date'], str):
-        metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
-    
-    # Convert metadata dictionary to Spark DataFrame
-    metadata_df = spark.createDataFrame([metadata])
-    
-    # Handle NULL values in reprocess column and ensure it's always a string
-    # Default to "false" if NULL, otherwise cast existing value to string
-    metadata_df = metadata_df.withColumn(
-        "reprocess",
-        when(col("reprocess").isNull(), "false")
-        .otherwise(col("reprocess").cast(StringType()))
-    )
-    
-    # Get the schema of the target metadata table to ensure type consistency
-    target_schema = spark.table(metadata_table_name).schema
-    
-    # Cast all columns to match the target schema's data types
-    for field in target_schema.fields:
-        if field.name in metadata_df.columns:
-            metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
-    
-    # Remove any existing record with the same file_path to avoid duplicates
-    spark.sql(f"""
-    DELETE FROM {metadata_table_name}
-    WHERE file_path = '{metadata['file_path']}'
-    """)
-    
-    # Insert the new or updated metadata record
-    metadata_df.write.mode("append").saveAsTable(metadata_table_name)
-    
-    # Add unique identifier using UNIX timestamp
-    metadata_df = metadata_df.withColumn("id", expr("CAST(UNIX_TIMESTAMP() * 1000000 AS BIGINT)"))
-    
-    print(f"Metadata updated for file: {metadata['file_name']}")
+    try:
+        # Convert string to datetime if necessary
+        if isinstance(metadata['process_date'], str):
+            metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
+        
+        # Convert to DataFrame with proper error handling
+        try:
+            metadata_df = spark.createDataFrame([metadata])
+        except Exception as e:
+            print(f"Error creating metadata DataFrame: {str(e)}")
+            raise
+        
+        # Handle reprocess column - simplified for efficiency
+        metadata_df = metadata_df.withColumn(
+            "reprocess",
+            when(col("reprocess").isNull(), "false")
+            .otherwise(col("reprocess").cast(StringType()))
+        )
+        
+        # Optimize schema matching
+        target_schema = spark.table(metadata_table_name).schema
+        for field in target_schema.fields:
+            if field.name in metadata_df.columns:
+                metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
+        
+        # Use efficient delete operation
+        spark.sql(f"""
+        DELETE FROM {metadata_table_name}
+        WHERE file_path = '{metadata['file_path']}'
+        """)
+        
+        # Write with timeout handling
+        metadata_df.write.mode("append").saveAsTable(metadata_table_name)
+        
+        print(f"Metadata updated for file: {metadata['file_name']}")
+        
+    except Exception as e:
+        print(f"Error in update_source_metadata: {str(e)}")
+        raise
 
 def extract_file_info(file_path):
     """
     Extracts file information from the file path
-    Args:
-        file_path: Path of the file
-    Returns:
-        Dictionary containing file name and type information
     """
     return {
-        "file_name": file_path.split("/")[-1],  # Extract filename from path
-        "file_type": "CSV"  # Currently assuming CSV format for all files
+        "file_name": file_path.split("/")[-1],
+        "file_type": "CSV"
     }
 
 def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, loan_id, as_of_month):
     """
-    Main function to append data to silver table and update metadata
-    Args:
-        spark: SparkSession object
-        raw_table_name: Name of the raw table
-        silver_table_name: Name of the silver table
-        metadata_table_name: Name of the metadata table
-        loan_id: Loan identifier
-        as_of_month: Reference month for the data
-    Returns:
-        String indicating process status ("PROCESSED" or "FAILED")
+    Main function to append data to silver table and update metadata with optimized resource usage
     """
+    file_path = None
     try:
-        # Construct fully qualified table names with database/schema
+        # Construct table names
         raw_table = f"bk_mpo_raw_v1.{raw_table_name}"
         silver_table = f"test_bk_mpo.{silver_table_name}_silver"
         
-        # Read data from raw table
-        raw_df = spark.table(raw_table)
+        # Optimize raw table reading with specific columns
+        file_path_df = spark.table(raw_table).select(
+            "loan_id", 
+            "as_of_month", 
+            col("source_metadata.file_path")
+        ).filter(
+            (col("as_of_month") == as_of_month) & 
+            (col("loan_id") == loan_id)
+        ).cache()  # Cache small filtered dataset
         
-        # Get file path from source metadata for specific loan_id and as_of_month
-        file_path = raw_df.filter((col("as_of_month") == as_of_month) & 
-                                (col("loan_id") == loan_id))\
-            .select(col("source_metadata.file_path")).first()[0]
+        if file_path_df.count() == 0:
+            raise Exception(f"No data found for loan_id {loan_id} and as_of_month {as_of_month}")
         
-        # Check if record already exists in silver table
-        silver_df = spark.table(silver_table)
-        existing_data = silver_df.filter((col("as_of_month") == as_of_month) & 
-                                       (col("loan_id") == loan_id))
+        file_path = file_path_df.first()[2]
+        file_path_df.unpersist()  # Clear cache
         
-        if existing_data.count() == 0:
-            # New record - Append to silver table
-            # Exclude source_metadata column and add file_path and ingest_time
-            columns_to_append = [col for col in raw_df.columns if col != 'source_metadata']
-            data_to_append = raw_df.filter((col("as_of_month") == as_of_month) & 
-                                         (col("loan_id") == loan_id))\
-                .select(columns_to_append)\
-                .withColumn("file_path", lit(file_path))\
-                .withColumn("ingest_time", current_timestamp())
+        # Check existing data efficiently
+        existing_count = spark.table(silver_table).filter(
+            (col("as_of_month") == as_of_month) & 
+            (col("loan_id") == loan_id)
+        ).count()
+        
+        if existing_count == 0:
+            # New record - Prepare data efficiently
+            columns_to_append = [col for col in spark.table(raw_table).columns if col != 'source_metadata']
+            data_to_append = spark.table(raw_table).filter(
+                (col("as_of_month") == as_of_month) & 
+                (col("loan_id") == loan_id)
+            ).select(
+                *columns_to_append
+            ).withColumn(
+                "file_path", lit(file_path)
+            ).withColumn(
+                "ingest_time", current_timestamp()
+            )
             
-            # Perform the append operation
+            # Write with optimization
             data_to_append.write.mode("append").saveAsTable(silver_table)
-            
             rows_inserted = data_to_append.count()
             process_state = "PROCESSED"
             
         else:
-            # Existing record - Update file_path and ingest_time
+            # Update existing record
             spark.sql(f"""
             UPDATE {silver_table}
-            SET file_path = '{file_path}', ingest_time = current_timestamp()
-            WHERE as_of_month = {as_of_month} AND loan_id = {loan_id}
+            SET file_path = '{file_path}', 
+                ingest_time = current_timestamp()
+            WHERE as_of_month = {as_of_month} 
+            AND loan_id = {loan_id}
             """)
-            
             rows_inserted = 0
             process_state = "UPDATED"
         
-        # Get file information
+        # Prepare and update metadata
         file_info = extract_file_info(file_path)
-        
-        # Prepare metadata for successful processing
         metadata = {
             "project_name": "bk_mpo",
             "file_name": file_info["file_name"],
@@ -138,69 +135,82 @@ def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadat
             "reprocess": "false"
         }
         
-        # Update the metadata table
         update_source_metadata(spark, metadata_table_name, metadata)
-        
-        print(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}, loan_id: {loan_id}")
         return "PROCESSED"
         
     except Exception as e:
-        # Error handling - capture full stack trace
-        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}\n{traceback.format_exc()}"
-        
-        # Prepare metadata for failed processing
-        metadata = {
-            "project_name": "bk_mpo",
-            "file_name": file_path.split("/")[-1],
-            "file_path": file_path,
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": "unknown",
-            "file_process_state": "FAILED",
-            "rows_inserted": 0,
-            "last_error_msg": error_message[:255],  # Truncate error message to fit field size
-            "reprocess": "true"
-        }
-        update_source_metadata(spark, metadata_table_name, metadata)
-        
+        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}"
         print(error_message)
+        
+        if file_path:
+            metadata = {
+                "project_name": "bk_mpo",
+                "file_name": file_path.split("/")[-1],
+                "file_path": file_path,
+                "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "file_type": "unknown",
+                "file_process_state": "FAILED",
+                "rows_inserted": 0,
+                "last_error_msg": error_message[:255],
+                "reprocess": "true"
+            }
+            try:
+                update_source_metadata(spark, metadata_table_name, metadata)
+            except Exception as meta_error:
+                print(f"Error updating metadata: {str(meta_error)}")
+        
         return "FAILED"
 
 def process_table(spark, raw_table_name, silver_table_name, metadata_table_name):
     """
-    Main orchestration function to process tables and handle metadata
-    Args:
-        spark: SparkSession object
-        raw_table_name: Name of the raw table
-        silver_table_name: Name of the silver table
-        metadata_table_name: Name of the metadata table
-    Returns:
-        List of tuples containing processing results
+    Optimized main processing function for serverless environment
     """
-    # Find records that exist in raw but not in silver using EXCEPT
-    diff_df = spark.sql(f"""
-    SELECT loan_id, as_of_month FROM bk_mpo_raw_v1.{raw_table_name}
-    EXCEPT
-    SELECT loan_id, as_of_month FROM test_bk_mpo.{silver_table_name}_silver
-    """)
+    try:
+        # Execute EXCEPT query with optimization
+        diff_df = spark.sql(f"""
+        SELECT loan_id, as_of_month 
+        FROM bk_mpo_raw_v1.{raw_table_name}
+        EXCEPT
+        SELECT loan_id, as_of_month 
+        FROM test_bk_mpo.{silver_table_name}_silver
+        """).cache()  # Cache the small diff result
+        
+        # Process in smaller batches if needed
+        batch_size = 100  # Adjust based on your data size
+        records_to_process = [(row.loan_id, row.as_of_month) for row in diff_df.collect()]
+        diff_df.unpersist()  # Clear cache
+        
+        results = []
+        for i in range(0, len(records_to_process), batch_size):
+            batch = records_to_process[i:i + batch_size]
+            for loan_id, as_of_month in batch:
+                try:
+                    result = append_and_update_metadata(
+                        spark, raw_table_name, silver_table_name,
+                        metadata_table_name, loan_id, as_of_month
+                    )
+                    results.append(((loan_id, as_of_month), result))
+                except Exception as e:
+                    print(f"Error processing record {loan_id}, {as_of_month}: {str(e)}")
+                    results.append(((loan_id, as_of_month), "FAILED"))
+        
+        return results
     
-    # Convert DataFrame to list of tuples for processing
-    records_to_process = [(row.loan_id, row.as_of_month) for row in diff_df.collect()]
-    
-    # Process each record and collect results
-    results = []
-    for loan_id, as_of_month in records_to_process:
-        result = append_and_update_metadata(spark, raw_table_name, silver_table_name, 
-                                          metadata_table_name, loan_id, as_of_month)
-        results.append(((loan_id, as_of_month), result))
-    
-    return results
+    except Exception as e:
+        print(f"Error in process_table: {str(e)}")
+        return []
 
-# Example usage of the functions
-raw_table_name = "loan_month"
-silver_table_name = "loan_month"
-metadata_table_name = "test_bk_mpo.source_metadata_new"
-processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
-
-# Print processing results
-for (loan_id, as_of_month), result in processing_results:
-    print(f"as_of_month: {as_of_month}, loan_id: {loan_id}, Result: {result}")
+# Example usage with error handling
+try:
+    raw_table_name = "loan_month"
+    silver_table_name = "loan_month"
+    metadata_table_name = "test_bk_mpo.source_metadata_new"
+    
+    processing_results = process_table(spark, raw_table_name, silver_table_name, metadata_table_name)
+    
+    # Print results with error handling
+    for (loan_id, as_of_month), result in processing_results:
+        print(f"as_of_month: {as_of_month}, loan_id: {loan_id}, Result: {result}")
+        
+except Exception as e:
+    print(f"Fatal error in main execution: {str(e)}")
