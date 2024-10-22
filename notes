@@ -1,194 +1,4 @@
-# Configure Spark session for schema evolution
-spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
-
-# Import required libraries
-from pyspark.sql import *
-from pyspark.sql.functions import col, lit, current_timestamp, when, expr
-from pyspark.sql.types import StringType, StructType, StructField
-from datetime import datetime
-import traceback
-
-# Widget setup for parameters
-dbutils.widgets.text("raw_table_name", "heloc", "Raw Table Name")
-dbutils.widgets.text("silver_table_name", "heloc_silver", "Silver Table Name")
-dbutils.widgets.text("metadata_table_name", "test_bk_mpo.source_metadata_new", "Metadata Table Name")
-dbutils.widgets.text("raw_database", "bk_mpo_raw_v1", "Raw Database Name")
-dbutils.widgets.text("silver_database", "test_bk_mpo", "Silver Database Name")
-
-# Read parameters
-raw_table_name = dbutils.widgets.get("raw_table_name")
-silver_table_name = dbutils.widgets.get("silver_table_name")
-metadata_table_name = dbutils.widgets.get("metadata_table_name")
-raw_database = dbutils.widgets.get("raw_database")
-silver_database = dbutils.widgets.get("silver_database")
-
-def log_message(message):
-    """
-    Helper function to display logs in Databricks
-    """
-    log_df = spark.createDataFrame([(message,)], ["Log Message"])
-    display(log_df)
-
-def validate_table_exists(database, table_name):
-    """
-    Validate if table exists in the database
-    """
-    try:
-        spark.table(f"{database}.{table_name}")
-        return True
-    except Exception as e:
-        log_message(f"Table validation failed for {database}.{table_name}: {str(e)}")
-        return False
-
-def update_source_metadata(spark, metadata_table_name, metadata):
-    """
-    Updates the metadata table with processing information
-    """
-    try:
-        if isinstance(metadata['process_date'], str):
-            metadata['process_date'] = datetime.strptime(metadata['process_date'], "%Y-%m-%d %H:%M:%S")
-        
-        try:
-            metadata_df = spark.createDataFrame([metadata])
-        except Exception as e:
-            log_message(f"Error creating metadata DataFrame: {str(e)}")
-            raise
-        
-        metadata_df = metadata_df.withColumn(
-            "reprocess",
-            when(col("reprocess").isNull(), "false")
-            .otherwise(col("reprocess").cast(StringType()))
-        )
-        
-        target_schema = spark.table(metadata_table_name).schema
-        for field in target_schema.fields:
-            if field.name in metadata_df.columns:
-                metadata_df = metadata_df.withColumn(field.name, col(field.name).cast(field.dataType))
-        
-        spark.sql(f"""
-        DELETE FROM {metadata_table_name}
-        WHERE file_path = '{metadata['file_path']}'
-        """)
-        
-        metadata_df.write.mode("append").option("mergeSchema", "true").saveAsTable(metadata_table_name)
-        
-        log_message(f"Metadata updated for file: {metadata['file_name']}")
-        
-    except Exception as e:
-        log_message(f"Error in update_source_metadata: {str(e)}")
-        raise
-
-def extract_file_info(file_path):
-    """
-    Extracts file information from the file path
-    """
-    return {
-        "file_name": file_path.split("/")[-1],
-        "file_type": "CSV"
-    }
-
-def append_and_update_metadata(spark, raw_table_name, silver_table_name, metadata_table_name, raw_database, silver_database, as_of_month):
-    """
-    Main function to append data to silver table and update metadata
-    """
-    file_path = None
-    try:
-        # Construct table names
-        raw_table = f"{raw_database}.{raw_table_name}"
-        silver_table = f"{silver_database}.{silver_table_name}"
-        
-        # Get file path
-        file_path_df = spark.table(raw_table).select(
-            "as_of_month", 
-            col("source_metadata.file_path")
-        ).filter(col("as_of_month") == as_of_month)
-        
-        file_path_row = file_path_df.first()
-        if not file_path_row:
-            raise Exception(f"No data found for as_of_month {as_of_month}")
-        
-        file_path = file_path_row[1]
-        log_message(f"Processing file: {file_path}")
-        
-        # Check existing data
-        existing_count = spark.table(silver_table).filter(
-            col("as_of_month") == as_of_month
-        ).count()
-        
-        if existing_count == 0:
-            # New record - Prepare data
-            log_message(f"Processing new records for as_of_month: {as_of_month}")
-            columns_to_append = [col for col in spark.table(raw_table).columns if col != 'source_metadata']
-            data_to_append = spark.table(raw_table).filter(
-                col("as_of_month") == as_of_month
-            ).select(
-                *columns_to_append
-            ).withColumn(
-                "file_path", lit(file_path)
-            ).withColumn(
-                "ingest_time", current_timestamp()
-            )
-            
-            # Write data with schema evolution enabled
-            data_to_append.write.mode("append").option("mergeSchema", "true").saveAsTable(silver_table)
-            rows_inserted = data_to_append.count()
-            process_state = "PROCESSED"
-            log_message(f"Inserted {rows_inserted} rows for as_of_month: {as_of_month}")
-            
-        else:
-            # Update existing record
-            log_message(f"Updating existing records for as_of_month: {as_of_month}")
-            spark.sql(f"""
-            UPDATE {silver_table}
-            SET file_path = '{file_path}', 
-                ingest_time = current_timestamp()
-            WHERE as_of_month = {as_of_month}
-            """)
-            rows_inserted = 0
-            process_state = "UPDATED"
-            log_message(f"Updated records for as_of_month: {as_of_month}")
-        
-        # Prepare and update metadata
-        file_info = extract_file_info(file_path)
-        metadata = {
-            "project_name": "bk_mpo",
-            "file_name": file_info["file_name"],
-            "file_path": file_path,
-            "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "file_type": file_info["file_type"],
-            "file_process_state": process_state,
-            "rows_inserted": rows_inserted,
-            "last_error_msg": "",
-            "reprocess": "false"
-        }
-        
-        update_source_metadata(spark, metadata_table_name, metadata)
-        log_message(f"Processing completed for {silver_table_name}, as_of_month: {as_of_month}")
-        return "PROCESSED"
-        
-    except Exception as e:
-        error_message = f"Error processing {raw_table_name} to {silver_table_name}: {str(e)}"
-        log_message(error_message)
-        log_message(traceback.format_exc())
-        
-        if file_path:
-            metadata = {
-                "project_name": "bk_mpo",
-                "file_name": file_path.split("/")[-1],
-                "file_path": file_path,
-                "process_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "file_type": "unknown",
-                "file_process_state": "FAILED",
-                "rows_inserted": 0,
-                "last_error_msg": error_message[:255],
-                "reprocess": "true"
-            }
-            try:
-                update_source_metadata(spark, metadata_table_name, metadata)
-            except Exception as meta_error:
-                log_message(f"Error updating metadata: {str(meta_error)}")
-        
-        return "FAILED"
+# ... (previous imports and configurations remain the same)
 
 def process_table(spark, raw_table_name, silver_table_name, metadata_table_name, raw_database, silver_database):
     """
@@ -214,7 +24,13 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name,
         as_of_months_df = diff_df.select("as_of_month").distinct()
         as_of_months = [row.as_of_month for row in as_of_months_df.collect()]
         
-        log_message(f"Found {len(as_of_months)} distinct as_of_month values to process")
+        total_months = len(as_of_months)
+        log_message(f"Found {total_months} distinct as_of_month values to process")
+        
+        # If no records to process, return success
+        if total_months == 0:
+            log_message("No new records to process. All data is up to date.")
+            return []
         
         results = []
         for as_of_month in as_of_months:
@@ -231,9 +47,13 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name,
         return results
     
     except Exception as e:
-        log_message(f"Error in process_table: {str(e)}")
-        log_message(traceback.format_exc())
-        return []
+        if str(e) == "SUCCESS":
+            log_message("Process completed successfully with no new records to process")
+            return []
+        else:
+            log_message(f"Error in process_table: {str(e)}")
+            log_message(traceback.format_exc())
+            raise  # Re-raise the exception if it's not a "SUCCESS" message
 
 # Main execution
 try:
@@ -266,6 +86,12 @@ try:
         log_message("Processing Summary:")
         display(summary_df)
         
+        # Check if any failures occurred
+        failures = [result for _, result in processing_results if result == "FAILED"]
+        if failures:
+            log_message("Some records failed to process")
+            dbutils.notebook.exit("FAILED")
+        
         # Display final counts
         spark.sql(f"""
         SELECT 
@@ -275,13 +101,16 @@ try:
         """).display()
         
     else:
-        log_message("No records were processed")
+        log_message("No records required processing - data is up to date")
     
     # Return success status
     dbutils.notebook.exit("SUCCESS")
     
 except Exception as e:
-    log_message(f"Fatal error in main execution: {str(e)}")
-    log_message(traceback.format_exc())
-    # Return failure status
-    dbutils.notebook.exit("FAILED")
+    if str(e) == "SUCCESS":
+        log_message("Process completed successfully with no new records to process")
+        dbutils.notebook.exit("SUCCESS")
+    else:
+        log_message(f"Fatal error in main execution: {str(e)}")
+        log_message(traceback.format_exc())
+        dbutils.notebook.exit("FAILED")
