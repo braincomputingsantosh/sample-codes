@@ -9,8 +9,8 @@ from datetime import datetime
 import traceback
 
 # Widget setup for parameters
-dbutils.widgets.text("raw_table_name", "loan_month", "Raw Table Name")
-dbutils.widgets.text("silver_table_name", "loan_month_silver", "Silver Table Name")
+dbutils.widgets.text("raw_table_name", "loan_month_loss_mit", "Raw Table Name")
+dbutils.widgets.text("silver_table_name", "loan_month_loss_mit_silver", "Silver Table Name")
 dbutils.widgets.text("metadata_table_name", "test_bk_mpo.source_metadata_new", "Metadata Table Name")
 dbutils.widgets.text("raw_database", "bk_mpo_raw_v1", "Raw Database Name")
 dbutils.widgets.text("silver_database", "test_bk_mpo", "Silver Database Name")
@@ -203,10 +203,10 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name,
         # Execute EXCEPT query to find delta records
         log_message("Executing EXCEPT query to find delta records...")
         diff_df = spark.sql(f"""
-        SELECT DISTINCT loan_id, as_of_month 
+        SELECT DISTINCT lps_loan_id, as_of_month 
         FROM {raw_database}.{raw_table_name}
         EXCEPT
-        SELECT DISTINCT loan_id, as_of_month 
+        SELECT DISTINCT lps_loan_id, as_of_month 
         FROM {silver_database}.{silver_table_name}
         """)
         
@@ -248,7 +248,7 @@ def process_table(spark, raw_table_name, silver_table_name, metadata_table_name,
 # Main execution
 try:
     log_message(f"""
-    Starting Loan Month processing job with parameters:
+    Starting Loss Mitigation processing job with parameters:
     Raw Table: {raw_database}.{raw_table_name}
     Silver Table: {silver_database}.{silver_table_name}
     Metadata Table: {metadata_table_name}
