@@ -1,47 +1,38 @@
-Subject: Completed: Parameterization of ETL Processing Notebooks
+-- HELOC
 
-Hi Team,
+{
+  "raw_table_name": "heloc",
+  "silver_table_name": "heloc_silver",
+  "metadata_table_name": "test_bk_mpo.source_metadata_new",
+  "raw_database": "bk_mpo_raw_v1",
+  "silver_database": "test_bk_mpo"
+}
 
-I've completed the parameterization of the ETL processing notebooks for our data pipeline. Here's a summary of the work completed:
+-- LOAN MONTH LOSS MIT
 
-1. Parameterized three Delta Table Update notebooks:
-   - HELOC (mcdash_loan_identifier, as_of_month)
-   - Loan Month (loan_id, as_of_month)
-   - Loan Month Loss Mitigation (lps_loan_id, as_of_month)
+{
+  "raw_table_name": "loan_month_loss_mit",
+  "silver_table_name": "loan_month_loss_mit_silver",
+  "metadata_table_name": "test_bk_mpo.source_metadata_new",
+  "raw_database": "bk_mpo_raw_v1",
+  "silver_database": "test_bk_mpo"
+}
 
-2. Parameterized ETL Processor notebook for full load process
-   - Handles multiple tables in a single run
-   - Configurable source and target schemas
+--- ETL Processor
 
-3. All notebooks now accept runtime parameters:
-   - Database names
-   - Table names
-   - Metadata table location
-   - Schema evolution enabled
+{
+  "source_schema": "bk_mpo_raw_v1",
+  "target_schema": "test_bk_mpo",
+  "metadata_table_name": "test_bk_mpo.source_metadata_new",
+  "tables_to_process": "loan,loan_current,loan_delinquency_history,loan_lookup"
+}
 
-4. Common parameters across notebooks:
-   raw_table_name
-   silver_table_name
-   metadata_table_name
-   raw_database
-   silver_database
+--- LOAN Month
 
-Job Parameters for each notebook have been documented and tested.
-
-Enhanced Features Added:
-- Detailed logging
-- Error handling
-- Success/Failure status tracking
-- Processing summaries
-- Schema validation
-- Table existence checks
-
-Next Steps:
-- Review and approve changes
-- Schedule jobs with appropriate parameters
-- Monitor initial runs
-
-Please let me know if you need any modifications or have questions.
-
-Best regards,
-[Your Name]
+{
+  "raw_table_name": "loan_month",
+  "silver_table_name": "loan_month_silver",
+  "metadata_table_name": "test_bk_mpo.source_metadata_new",
+  "raw_database": "bk_mpo_raw_v1",
+  "silver_database": "test_bk_mpo"
+}
