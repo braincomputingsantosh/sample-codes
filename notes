@@ -1,38 +1,105 @@
--- HELOC
+Here's my response to the comments about improving the ETL code:
 
+```
+I agree with these suggestions for improvement. Here's how we can enhance our current code:
+
+1. Generic Notebook Creation:
+- We can create a base ETL class that handles common functionality
+- Add a parameter for 'load_type' (truncate/upsert) to control processing behavior
+- Use inheritance to handle table-specific requirements when needed
+
+2. Metadata Table Enhancement:
+```python
+# Example metadata schema enhancement
+metadata_schema = StructType([
+    # Existing fields...
+    StructField("load_type", StringType(), True),  # For truncate/upsert
+    StructField("table_type", StringType(), True), # Table category
+    StructField("processing_config", StringType(), True)  # JSON string for specific configurations
+])
+```
+
+3. Streaming/Checkpoint Implementation:
+```python
+def read_incremental_data(self, table_name, checkpoint_column="as_of_month"):
+    return (spark.readStream
+        .format("delta")
+        .option("readChangeFeed", "true")
+        .option("startingVersion", self.get_last_processed_version())
+        .load(f"{self.source_path}/{table_name}")
+    )
+```
+
+4. Merge Operation Enhancement:
+```python
+def merge_data(self, source_df, target_table, merge_key):
+    return (DeltaTable.forName(spark, target_table)
+        .merge(source_df, f"source.{merge_key} = target.{merge_key}")
+        .whenMatchedUpdate(...)
+        .whenNotMatchedInsert(...)
+        .execute()
+    )
+```
+
+5. Utility Functions Module:
+```python
+# utils/etl_functions.py
+class ETLUtils:
+    @staticmethod
+    def log_message(message): ...
+    
+    @staticmethod
+    def extract_file_info(file_path): ...
+    
+    @staticmethod
+    def validate_schema(source_df, target_df): ...
+    
+    @staticmethod
+    def transform_dataframe(df, transformations): ...
+```
+
+6. Configuration Management:
+```python
+# config/etl_config.json
 {
-  "raw_table_name": "heloc",
-  "silver_table_name": "heloc_silver",
-  "metadata_table_name": "test_bk_mpo.source_metadata_new",
-  "raw_database": "bk_mpo_raw_v1",
-  "silver_database": "test_bk_mpo"
+    "heloc": {
+        "load_type": "upsert",
+        "merge_key": "mcdash_loan_identifier",
+        "schema_evolution": true,
+        "write_mode": "merge"
+    },
+    "loan_month": {
+        "load_type": "upsert",
+        "merge_key": "loan_id",
+        "schema_evolution": true,
+        "write_mode": "merge"
+    }
 }
+```
 
--- LOAN MONTH LOSS MIT
+Benefits of these improvements:
+1. Reduced code duplication
+2. Easier maintenance
+3. Consistent processing patterns
+4. Configurable behavior without code changes
+5. Better error handling and logging
+6. Improved scalability
 
-{
-  "raw_table_name": "loan_month_loss_mit",
-  "silver_table_name": "loan_month_loss_mit_silver",
-  "metadata_table_name": "test_bk_mpo.source_metadata_new",
-  "raw_database": "bk_mpo_raw_v1",
-  "silver_database": "test_bk_mpo"
-}
+Implementation Plan:
+1. Create base ETL class with common functionality
+2. Modify metadata table schema
+3. Update existing jobs to use new framework
+4. Add configuration files
+5. Create utility functions module
+6. Update documentation
 
---- ETL Processor
+Would you like me to provide the complete refactored code implementing these suggestions?
 
-{
-  "source_schema": "bk_mpo_raw_v1",
-  "target_schema": "test_bk_mpo",
-  "metadata_table_name": "test_bk_mpo.source_metadata_new",
-  "tables_to_process": "loan,loan_current,loan_delinquency_history,loan_lookup"
-}
+Additional Benefits:
+- Parallel processing capabilities
+- Consistent error handling
+- Centralized configuration
+- Easier testing
+- Better monitoring capabilities
+```
 
---- LOAN Month
-
-{
-  "raw_table_name": "loan_month",
-  "silver_table_name": "loan_month_silver",
-  "metadata_table_name": "test_bk_mpo.source_metadata_new",
-  "raw_database": "bk_mpo_raw_v1",
-  "silver_database": "test_bk_mpo"
-}
