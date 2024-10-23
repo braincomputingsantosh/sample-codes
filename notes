@@ -174,3 +174,51 @@ Next Steps:
 4. Develop enhancement timeline
 5. Begin incremental implementation of improvements
 
+
+
+
+settings['silver_notebooks'].append([
+    {
+        "notebook_path": "/Workspace/EDA/bk_mpo_raw_to_silver_operations/1.HELOC_MASTER_APPEND_OPERATION",
+        "timeout_seconds": 1800,
+        "parameters": {
+            "raw_table_name": "heloc",
+            "silver_table_name": "heloc_silver",
+            "metadata_table_name": "test_bk_mpo.source_metadata_new",
+            "raw_database": "bk_mpo_raw_v1",
+            "silver_database": "test_bk_mpo"
+        }
+    },
+    {
+        "notebook_path": "/Workspace/EDA/bk_mpo_raw_to_silver_operations/2.LOAN_MONTH_LOSS_MIT_MASTER_APPEND_OPERATION",
+        "timeout_seconds": 1800,
+        "parameters": {
+            "raw_table_name": "loan_month_loss_mit",
+            "silver_table_name": "loan_month_loss_mit_silver",
+            "metadata_table_name": "test_bk_mpo.source_metadata_new",
+            "raw_database": "bk_mpo_raw_v1",
+            "silver_database": "test_bk_mpo"
+        }
+    },
+    {
+        "notebook_path": "/Workspace/EDA/bk_mpo_raw_to_silver_operations/3.LOAN_MONTH_MASTER_APPEND_OPERATION",
+        "timeout_seconds": 1800,
+        "parameters": {
+            "raw_table_name": "loan_month",
+            "silver_table_name": "loan_month_silver",
+            "metadata_table_name": "test_bk_mpo.source_metadata_new",
+            "raw_database": "bk_mpo_raw_v1",
+            "silver_database": "test_bk_mpo"
+        }
+    },
+    {
+        "notebook_path": "/Workspace/EDA/bk_mpo_raw_to_silver_operations/_ETL_TRUNCATE_INSERT_BK_MPO",
+        "timeout_seconds": 1800,
+        "parameters": {
+            "source_schema": "bk_mpo_raw_v1",
+            "target_schema": "test_bk_mpo",
+            "metadata_table_name": "test_bk_mpo.source_metadata_new",
+            "tables_to_process": "loan,loan_current,loan_delinquency_history,loan_lookup,mc_dash_actual_counts,loan_arm"
+        }
+    }
+])
