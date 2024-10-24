@@ -287,3 +287,147 @@ settings['silver_notebooks'].append([
   ],
   "max_concurrent_runs": 1
 }
+
+------ 
+
+# GoCD Migration Test Plan
+
+## 1. Deployment Script Verification
+### Basic Script Execution
+- Verify all existing deployment scripts run successfully in the new environment
+- Test script execution with different parameters/arguments
+- Validate script timeout settings
+- Confirm proper handling of script exit codes
+- Test script logging and output capture
+
+### Environment Variables
+- Verify all required environment variables are properly set
+- Test variable inheritance across pipelines
+- Validate secure variables handling
+- Test environment-specific variable overrides
+
+## 2. Pipeline Configuration Tests
+### Pipeline Structure
+- Verify pipeline groups are correctly migrated
+- Validate stage and job configurations
+- Test pipeline dependencies and ordering
+- Confirm material configurations (git, dependency materials)
+- Verify template usage and inheritance
+
+### Triggers and Scheduling
+- Test automatic pipeline triggers
+- Verify cron-based schedules
+- Test manual pipeline triggers
+- Validate pipeline timer configurations
+- Test timer-based triggers across different time zones
+
+## 3. Integration Tests
+### Source Control
+- Verify git/repository connections
+- Test branch tracking and switching
+- Validate webhook configurations
+- Test repository polling
+- Verify access permissions
+
+### Artifact Management
+- Test artifact upload/download
+- Verify artifact cleanup policies
+- Test artifact propagation between stages
+- Validate artifact storage configuration
+- Test large artifact handling
+
+## 4. Deployment Scenarios
+### Success Paths
+- Full deployment to each environment
+- Incremental deployments
+- Rollback procedures
+- Multi-service deployments
+- Blue-green deployment scenarios (if applicable)
+
+### Failure Scenarios
+- Network interruption during deployment
+- Resource constraints
+- Missing dependencies
+- Invalid configurations
+- Timeout scenarios
+- Partial deployment failures
+
+## 5. Security and Access Control
+### Authentication
+- Test user authentication methods
+- Verify role-based access control
+- Test pipeline group permissions
+- Validate environment access restrictions
+- Test API authentication
+
+### Authorization
+- Verify user permissions for:
+  - Pipeline operations
+  - Environment access
+  - Configuration modifications
+  - Agent management
+  - Artifact access
+
+## 6. Performance Testing
+### Pipeline Performance
+- Measure pipeline execution times
+- Test concurrent pipeline execution
+- Validate resource utilization
+- Test agent allocation and distribution
+- Monitor system resource usage
+
+### Scale Testing
+- Test multiple concurrent deployments
+- Validate system behavior under load
+- Test agent scaling
+- Monitor artifact storage scaling
+- Test pipeline history performance
+
+## 7. Operational Procedures
+### Backup and Restore
+- Test configuration backup procedures
+- Verify pipeline history backup
+- Test artifact backup
+- Validate restore procedures
+- Test disaster recovery scenarios
+
+### Monitoring and Alerts
+- Verify pipeline status notifications
+- Test failure alerts
+- Validate monitoring integrations
+- Test custom dashboards
+- Verify metrics collection
+
+## 8. Migration-Specific Tests
+### Pre-Migration
+- Document current pipeline configurations
+- Capture current performance metrics
+- Verify current pipeline states
+- Document current access controls
+- Backup all configurations
+
+### Post-Migration
+- Compare pipeline configurations
+- Verify pipeline history
+- Validate access controls
+- Compare performance metrics
+- Test all integration points
+
+## Test Execution Checklist
+- [ ] Create test environments
+- [ ] Document test scenarios
+- [ ] Prepare test data
+- [ ] Execute tests in order of dependency
+- [ ] Document test results
+- [ ] Address failures
+- [ ] Perform regression testing
+- [ ] Sign off on test completion
+
+## Success Criteria
+1. All deployment scripts execute successfully
+2. Pipeline configurations match pre-migration state
+3. All integrations are functional
+4. Performance meets or exceeds previous metrics
+5. Security controls are properly enforced
+6. No data loss during migration
+7. All operational procedures are verified
